@@ -1,0 +1,16 @@
+/* style.css */
+body, html {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevents scrollbars from appearing */
+    height: 100%;
+    width: 100%;
+    background-color: #2d3f4f; /* A dark background color for any slivers that might appear */
+}
+
+canvas {
+    display: block; /* Removes the small space that can appear below the canvas */
+    position: absolute;
+    top: 0;
+    left: 0;
+}

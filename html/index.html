@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plunder! - The World</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../css/start-screen.css">
+</head>
+<body>
+    <div id="start-screen">
+        <div class="start-menu-container">
+            <div class="title-container">
+                <span class="title-word">Prize</span>
+                <span class="title-ampersand">&</span>
+                <span class="title-word">Plunder!</span>
+            </div>
+            <div class="title-divider">
+                By the fortunes of the winds, seas, and yourself...
+            </div>
+            <div class="menu-controls">
+                <div class="input-wrapper">
+                    <input type="text" id="player-name-input" placeholder="Enter Captain's Name" maxlength="24">
+                </div>
+                <button id="start-game-btn">Set Sail!</button>
+                <button id="customize-btn">Shipyard</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="shipyard-screen" style="display: none;">
+        <div class="start-menu-container">
+            <div class="shipyard-top-half">
+                <div class="shipyard-header">
+                    <h1 class="shipyard-title">SHIPYARD</h1>
+                    <!-- New: Dropdown for selecting preview focus -->
+                    <select id="shipyard-focus-select" style="display: none;">
+                        <option value="whole-ship">Whole Ship</option>
+                        <option value="cannon">Cannon</option>
+                        <option value="customized-ship">Customized Ship</option>
+                    </select>
+                </div>
+                <div class="ship-preview-window">
+                    <canvas id="ship-preview-canvas"></canvas>
+                </div>
+            </div>
+            <!-- New: Wrapper for the name input and stats button -->
+            <div class="shipyard-name-wrapper">
+                <button id="stats-btn" class="shipyard-button-small">Stats</button>
+                <div class="input-wrapper">
+                    <input type="text" id="ship-name-input" placeholder="Enter Ship's Name" maxlength="24">
+                </div>
+                <button id="zoom-btn" class="shipyard-button-small">Zoom</button>
+            </div>
+            <div class="shipyard-bottom-half">
+                <!-- New: Stats Display Panel (hidden by default) -->
+                <div id="ship-stats-display" class="options-scroll-menu" style="display: none;">
+                    <h2 id="stats-ship-name"></h2>
+                    <div class="stats-divider"></div>
+                    <div class="stat-item"><span class="stat-label">Type</span><span id="stats-ship-type" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Length (Hull)</span><span id="stats-ship-length" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Beam (Hull)</span><span id="stats-ship-beam" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Draught</span><span id="stats-ship-draught" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Hull Durability</span><span id="stats-hull-durability" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Rig Durability</span><span id="stats-rig-durability" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Total Burthen</span><span id="stats-ship-burthen" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Burthen Hold</span><span id="stats-ship-burthen-hold" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Broadside</span><span id="stats-ship-broadside" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Min. Sailing Crew</span><span id="stats-min-crew" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Min. Fighting Crew</span><span id="stats-min-fighting-crew" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Ordinary Reload Time</span><span id="stats-reload-time" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Cruising Speed</span><span id="stats-cruising-speed" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Acceleration</span><span id="stats-acceleration" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Turning Radius</span><span id="stats-turning-radius" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Turning Rate</span><span id="stats-turning-rate" class="stat-value"></span></div>
+                    <div class="stat-item"><span class="stat-label">Best Point of Sail</span><span id="stats-best-point-of-sail" class="stat-value"></span></div>
+                    <!-- More stats can be added here in the future -->
+                </div>
+
+                <!-- Existing Options Menu -->
+                <div id="options-menu-wrapper" class="options-scroll-menu">
+                    <div class="options-section-header">Cosmetics</div>                    <div class="option-item">
+                        <span data-tooltip="Pennant Color: Sets the color of the small flag flown at the top of the mast(s).">Pennant Color</span>
+                        <div class="color-picker-wrapper">
+                            <div id="pennant-color-swatch"></div>
+                        </div>
+                    </div>
+                    <div class="option-item">
+                        <span data-tooltip="Sail Color: Sets the primary color for all of the ship's sails.">Sail Color</span>
+                        <div class="color-picker-wrapper">
+                            <div id="sail-color-swatch"></div>
+                        </div>
+                    </div>
+                    <!-- New: Hull Color Selection -->
+                    <div class="option-item">
+                        <span data-tooltip="Hull Color: Choose between a default color scheme or customize the individual colors of the hull.">Hull Color</span>
+                        <select id="hull-color-type-select">
+                            <option value="default" selected>Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="custom-hull-colors-wrapper" style="display: none;">
+                        <div class="option-item">
+                            <span data-tooltip="Primary Hull Color: Sets the main color for the lower hull and other primary structural components.">Primary Hull Color</span>
+                            <div class="color-picker-wrapper">
+                                <div id="primary-hull-color-swatch"></div>
+                            </div>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Secondary Hull Color: Sets the accent color for the upper part of the bulwark.">Secondary Hull Color</span>
+                            <div class="color-picker-wrapper">
+                                <div id="secondary-hull-color-swatch"></div>
+                            </div>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Bulwark Rail Color: Sets the color for the very top rail of the bulwark, capping the ship's sides.">Bulwark Rail Color</span>
+                            <div class="color-picker-wrapper">
+                                <div id="bulwark-rail-color-swatch"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- New: Spar Color Selection -->
+                    <div class="option-item">
+                        <span data-tooltip="Spar Color: Choose between a default color scheme or customize the color of the spars.">Spar Color</span>
+                        <select id="spar-color-type-select">
+                            <option value="default" selected>Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="custom-spar-color-wrapper" style="display: none;">
+                        <div class="option-item">
+                            <span data-tooltip="Spar Color: Sets the color for the ship's masts, yards, bowsprit, and booms.">Spar Color</span>
+                            <div class="color-picker-wrapper">
+                                <div id="custom-spar-color-swatch"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- New: Deck Color Selection -->
+                    <div class="option-item">
+                        <span data-tooltip="Deck Color: Choose between a default color scheme or customize the color of the deck.">Deck Color</span>
+                        <select id="deck-color-type-select">
+                            <option value="default" selected>Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div id="custom-deck-color-wrapper" style="display: none;">
+                        <div class="option-item">
+                            <span data-tooltip="Deck Color: Sets the color for all deck surfaces.">Deck Color</span>
+                            <div class="color-picker-wrapper">
+                                <div id="custom-deck-color-swatch"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="options-section-header">Structure</div>
+                    <!-- New: Ship Build Type Selection -->
+                    <div class="option-item">
+                        <span data-tooltip="Ship Build: Determines if the ship's size is based on its number of guns, cargo capacity, etc.">Ship Build</span>
+                        <select id="ship-build-type-select">
+                            <option value="guns" selected>Gun Num.</option>
+                            <option value="cargo">Cargo Capacity</option>
+                        </select>
+                    </div>
+                    <!-- New: Conditional sub-selection container -->
+                    <div id="gun-count-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="Guns Defining Broadside: Sets the number of cannons on each side, which directly determines the ship's overall length.">Guns Defining Broadside</span>
+                        <select id="gun-count-select">
+                            <!-- Options 1-20 will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    <div id="cargo-capacity-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="Cargo Capacity: Sets the ship's cargo hold size, which directly determines the ship's overall length.">Cargo Capacity</span>
+                        <select id="cargo-capacity-select">
+                            <!-- Options 1-60 will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    <!-- New: Conditional gun selection for cargo ships -->
+                    <div id="cargo-gun-count-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="Guns Along Broadside: Adds non-defining cannons to a cargo-focused ship without increasing its length.">Guns Along Broadside</span>
+                        <select id="cargo-gun-count-select">
+                            <!-- Options will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    <!-- New: Num of Decks Selection -->
+                    <div id="deck-count-wrapper" class="option-item">
+                        <span data-tooltip="Num. of Decks: Sets the number of full decks, affecting height, stability, available gun tiers, and superstructure options.">Num. of Decks</span>
+                        <select id="deck-count-select">
+                            <option value="1">1-Decker</option>
+                            <option value="2">2-Decker</option>
+                            <option value="3">3-Decker</option>
+                        </select>
+                    </div>
+                    <!-- New: Deck Type Sub-Options -->
+                    <div id="deck-type-1-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="Deck Type (1st Tier): Defines the purpose of a lower deck, either for mounting guns or for maximizing cargo space.">Deck Type 1st Tier</span>
+                        <select id="deck-type-1-select">
+                            <option value="gun">Gun-deck</option>
+                            <option value="cargo">Cargo-deck</option>
+                        </select>
+                    </div>
+                    <div id="deck-type-2-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="Deck Type (2nd Tier): Defines the purpose of a lower deck, either for mounting guns or for maximizing cargo space.">Deck Type 2nd Tier</span>
+                        <select id="deck-type-2-select">
+                            <option value="gun">Gun-deck</option>
+                            <option value="cargo">Cargo-deck</option>
+                        </select>
+                    </div>
+                    <!-- New: Beam Ratio Selection -->
+                    <div id="beam-ratio-wrapper" class="option-item beam-slider-wrapper" style="display: none;">
+                        <span data-tooltip="Beam (Length-to-Beam Ratio): Controls the ship's width relative to its length, affecting stability, turning radius, and form resistance.">Beam</span>
+                        <div class="slider-container">
+                            <div class="slider-input-group">
+                                <input type="range" id="beam-ratio-slider" min="20" max="40" step="1" value="20">
+                                <div class="slider-labels">
+                                    <span class="slider-label-left">Wider</span>
+                                    <span class="slider-label-right">Narrower</span>
+                                </div>
+                            </div>
+                            <span id="beam-ratio-value">2.00:1</span>
+                        </div>
+                    </div>
+                    <!-- New: Draught Selection Slider -->
+                    <div id="draught-wrapper" class="option-item draught-slider-wrapper">
+                        <span data-tooltip="Draught: Sets the depth of the ship below the water as a percentage of its beam, affecting stability and acceleration.">Draught</span>
+                        <div class="slider-container">
+                            <div class="slider-input-group">
+                                <input type="range" id="draught-slider" min="40" max="70" step="1" value="50">
+                                <div class="slider-labels">
+                                    <span class="slider-label-left">Shallower</span>
+                                    <span class="slider-label-right">Deeper</span>
+                                </div>
+                            </div>
+                            <span id="draught-value">N/A</span>
+                        </div>
+                    </div>
+                    <div class="option-item">
+                        <span data-tooltip="Rig Type (Mast Count): Selects the number of masts for the ship, which determines the available sail configurations.">Rig Type</span>
+                        <select id="rig-type-select">
+                            <option value="1">1-Mast</option>
+                            <option value="2">2-Mast</option>
+                            <option value="3">3-Mast</option>
+                        </select>
+                    </div>
+                    <!-- New: Conditional Rig Sub-selections -->
+                    <div id="mast-1-rig-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="1-Mast Rig: Selects the specific sail configuration for the chosen mast count, affecting speed and maneuverability.">1-Mast Rig</span>
+                        <select id="mast-1-rig-select">
+                            <!-- Options will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    <div id="mast-2-rig-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="2-Mast Rig: Selects the specific sail configuration for the chosen mast count, affecting speed and maneuverability.">2-Mast Rig</span>
+                        <select id="mast-2-rig-select">
+                            <!-- Options will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    <div id="mast-3-rig-wrapper" class="option-item" style="display: none;">
+                        <span data-tooltip="3-Mast Rig: Selects the specific sail configuration for the chosen mast count, affecting speed and maneuverability.">3-Mast Rig</span>
+                        <select id="mast-3-rig-select">
+                            <!-- Options will be populated by JavaScript -->
+                        </select>
+                    </div>
+                    <!-- New: Deck Layout Selection -->
+                    <div class="option-item">
+                        <span data-tooltip="Deck Layout: Configures the main deck for either standard use or to maximize space for cargo hatches.">Deck Layout</span>
+                        <select id="deck-layout-select">
+                            <option value="standard" selected>Standard</option>
+                            <option value="cargo">Cargo</option>
+                        </select>
+                    </div>
+                    <div class="options-section-header">Superstructure</div>
+                    <div class="option-item">
+                        <span data-tooltip="Superstructure Type: Selects the category of structures to add on top of the main decks.">Superstructure Type</span>
+                        <select id="superstructure-type-select">
+                            <option value="none" selected>None (Flushdeck)</option>
+                            <option value="castles">Castles</option>
+                            <option value="deckhouses">Deckhouses</option>
+                            <option value="decks">Decks</option>
+                        </select>
+                    </div>
+                    <!-- New: Castle sub-options -->
+                    <div id="castles-options-wrapper" style="display: none;">
+                        <div class="option-item">
+                            <span data-tooltip="Forecastle: Adds a raised structure at the bow, providing a better vantage point and mounting for bow chaser cannons.">Forecastle</span>
+                            <select id="forecastle-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Midcastle: Adds a raised structure in the middle of the ship, often used for housing additional cannons or equipment.">Midcastle</span>
+                            <select id="midcastle-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Aftercastle: Adds a raised structure at the stern, providing command space and mounting for stern chaser cannons.">Aftercastle</span>
+                            <select id="aftercastle-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Sterncastle: Adds an additional, smaller raised structure on top of the aftercastle or at the very stern.">Sterncastle</span>
+                            <select id="sterncastle-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- New: Deckhouse sub-options -->
+                    <div id="deckhouses-options-wrapper" style="display: none;">
+                        <div class="option-item">
+                            <span data-tooltip="Fore Deckhouse: Adds a small, enclosed cabin-like structure towards the bow of the ship.">Fore Deckhouse</span>
+                            <select id="fore-deckhouse-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Mid Deckhouse: Adds a small, enclosed cabin-like structure in the middle of the ship.">Mid Deckhouse</span>
+                            <select id="mid-deckhouse-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Aft Deckhouse: Adds a small, enclosed cabin-like structure towards the stern of the ship.">Aft Deckhouse</span>
+                            <select id="aft-deckhouse-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <div class="option-item">
+                            <span data-tooltip="Stern Cabin: Adds a larger, integrated cabin structure at the stern, blending features of a castle and a deckhouse.">Stern Cabin</span>
+                            <select id="stern-cabin-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- New: Decks sub-options -->
+                    <div id="decks-options-wrapper" style="display: none;">
+                        <div class="option-item">
+                            <span data-tooltip="Spar-deck: Adds a lightweight upper deck, often with a central opening, connecting structures at the bow and stern.">Spar-deck</span>
+                            <select id="spar-deck-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                        <!-- New: Sterncastle on Spar-deck sub-option -->
+                        <div id="sterncastle-on-spardeck-wrapper" class="option-item" style="display: none;">
+                            <span data-tooltip="Sterncastle on Spar-deck: Adds a sterncastle on top of an equipped spar-deck, creating another tier of elevation.">Sterncastle on Spar-deck</span>
+                            <select id="sterncastle-on-spardeck-select">
+                                <option value="none" selected>Not Equipped</option>
+                                <option value="equipped">Equipped</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <button id="back-to-main-menu-btn" class="shipyard-button-small">Back</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New: Tooltip element for the shipyard -->
+    <div id="shipyard-tooltip"></div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- New: Color Picker HTML is now outside the main flow, ready to be moved by JS -->
+    <div id="hsv-popup" class="hsv-picker-container" style="display: none;">
+        <div id="color-box">
+            <div id="color-box-indicator"></div>
+        </div>
+        <div id="hue-slider">
+            <div id="hue-slider-indicator"></div>
+        </div>
+    </div>
+
+    <!-- Load external libraries first -->
+    <script src="https://unpkg.com/clipper-lib@6.4.2/clipper.js"></script>
+    <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+
+    <!-- Load your game scripts in order of dependency -->
+    <!-- Assumes a 'js' folder is at the same level as your 'html' folder -->
+    <script src="../js/modules/utils.js"></script>       <!-- Utility functions, no dependencies -->
+    <script src="../js/config.js"></script>      <!-- Game constants needed by classes -->
+    <script src="../js/data/items.js"></script>
+    <script src="../js/data/npc-roles.js"></script>
+    <script src="../js/data/ranks.js"></script>
+    <script src="../js/modules/ui.js"></script>          <!-- UI drawing functions (depends on config) -->
+    <script src="../js/modules/pathfinder.js"></script>  <!-- A* Pathfinder module -->
+    <script src="../js/modules/world-manager.js"></script> <!-- New: World streaming system -->
+    <script src="../js/modules/CargoIconSystem.js"></script>
+    <script src="../js/classes/obstacles_class/obstacle.js"></script> <!-- Base obstacle class -->
+    <script src="../js/classes/obstacles_class/rock.js"></script>     <!-- Rock class -->
+    <script src="../js/classes/obstacles_class/island.js"></script>    <!-- Island class -->
+    <script src="../js/classes/obstacles_class/shoal.js"></script>     <!-- Shoal class -->
+    <script src="../js/classes/obstacles_class/coralreef.js"></script> <!-- Coral Reef class -->
+    <script src="../js/classes/spatial_grid/spatialgrid.js"></script>  <!-- SpatialGrid class -->
+    <script src="../js/classes/ShipInventory.js"></script>
+    
+    <script src="../js/classes/ship_class/baseship.js"></script>   <!-- Base ship class must be first -->
+    <script src="../js/classes/ship_class/CustomShip/Rigs/SquareRig.js"></script> <!-- Rig classes -->
+    <script src="../js/classes/ship_class/CustomShip/Rigs/SloopRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/BrigRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/ForeAndAftSloopRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/FullRiggedShipRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/SchoonerRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/ThreeMastSchoonerRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/BrigantineRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/BarqueRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/Rigs/BarquentineRig.js"></script>
+    <script src="../js/classes/ship_class/CustomShip/CustomShip.js"></script> <!-- Custom ship class -->
+    <script src="../js/classes/ship_class/cannonball.js"></script> <!-- Cannonball class, needed by Ship -->
+    <script src="../js/classes/ship_class/npcshipcombat.js"></script> <!-- The new CombatPilot class -->
+    <script src="../js/classes/ship_class/npcship.js"></script>    <!-- Base NPC class must be before its subclasses -->
+    <script src="../js/classes/ship_class/playership.js"></script> <!-- PlayerShip depends on Ship -->
+    <script src="../js/shipyard/HullGenerator.js"></script>    <!-- New: Shipyard generators -->
+    <script src="../js/shipyard/DeckGenerator.js"></script>
+    <script src="../js/shipyard/RiggingGenerator.js"></script>
+    <script src="../js/shipyard/ShipGenerator.js"></script>
+    <script src="../js/classes/ship_class/NPCship_subclass/npc-archetypes.js"></script> <!-- Load detailed NPC ship designs -->
+    <script src="../js/classes/ship_class/NPCship_subclass/navyshipcombat.js"></script> <!-- Navy combat behavior, depends on NpcShipCombat -->
+    <script src="../js/classes/ship_class/NPCship_subclass/merchantshipcombat.js"></script> <!-- Merchant combat behavior -->
+    <script src="../js/classes/ship_class/NPCship_subclass/navyship.js"></script> <!-- Navy subclass -->
+    <script src="../js/classes/ship_class/NPCship_subclass/merchantship.js"></script> <!-- Merchant subclass -->
+    <script src="../js/data/formations.js"></script> <!-- Fleet Formations -->
+    <script src="../js/classes/FleetManager.js"></script> <!-- Fleet Manager -->
+    <script src="../js/classes/ship_class/FleetPilot.js"></script> <!-- Fleet AI -->
+    <script src="../js/classes/ship_class/AlliedCombatPilot.js"></script> <!-- Allied Combat AI -->
+    <script src="../js/classes/ship_class/AlliedShip.js"></script> <!-- Allied Ship Class -->
+    <script src="../js/ui/FleetUI.js"></script> <!-- Fleet UI -->
+    <script src="../js/classes/ShorelineRenderer.js"></script> <!-- Shoreline Renderer -->
+    <script src="../js/game.js"></script>        <!-- Game object must be defined before main.js uses it -->
+    <script src="../js/main.js"></script>        <!-- Main logic runs last -->
+</body>
+</html>

@@ -1,0 +1,728 @@
+/* --- Start Screen Overlay --- */
+#start-screen,
+#shipyard-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent backdrop */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100; /* Ensure it's on top of the canvas */
+}
+
+.start-menu-container {
+    /* Use viewport units for responsive sizing, maintaining a square shape */
+    width: min(500px, 90vw);
+    height: min(500px, 90vw);
+    padding: 40px; /* Restore original content padding */
+    border: none; /* The border is now part of the SVG background */
+    filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.5)); /* Use drop-shadow to follow the SVG shape */
+    text-align: center;
+    color: #3d352a; /* Changed for contrast against the new background */
+    display: flex; /* Use flexbox to center content */
+    flex-direction: column; /* Stack content vertically */
+    justify-content: flex-start; /* Align content to the top */
+    align-items: center; /* Center the items horizontally */
+    position: relative; /* Required for positioning pseudo-elements */
+
+    /* --- New: Concave Corner Box using SVG Background --- */
+    /* This SVG defines the entire box, including the border and concave corners, as a background image. */
+    /* This uses a single SVG path with a fill for the background and a stroke for the border. */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 500 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L475 0 Q475 25 500 25 L500 475 Q475 475 475 500 L25 500 Q25 475 0 475 Z' fill='%23ddc09a' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+}
+
+/* --- Decorative Side Elements (Stars and Lines) --- */
+/* The ::before and ::after pseudo-elements now draw the combined line-and-star object. This applies to both start and shipyard screens. */
+.start-menu-container::before,
+.start-menu-container::after {
+    content: '';
+    position: absolute;
+    width: 27px; /* Width of the star (25px) + some padding */
+    height: calc(100% - 100px); /* The height of the line */
+    top: 50px; /* Positioned 50px from the top */
+    /* This new SVG contains both the line and the star, ensuring they are always aligned */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 27 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='13.5' y1='0' x2='13.5' y2='400' stroke='%233d352a' stroke-width='2'/%3E%3Cg transform='translate(1, 187.5)'%3E%3Cpath d='M12.5 -1 Q12.5 12.5 25 12.5 Q12.5 12.5 12.5 26 Q12.5 12.5 0 12.5 Q12.5 12.5 12.5 -1 Z' fill='%233d352a'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 100% 100%;
+    pointer-events: none;
+}
+
+/* New: Simplified selector for the left decorative line */
+.start-menu-container::before {
+    left: 15px; /* Position the left decoration */
+}
+
+/* New: Simplified selector for the right decorative line */
+.start-menu-container::after {
+    right: 15px; /* Position the right decoration */
+}
+
+/* --- Title Styling --- */
+.title-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: 'IM Fell English', serif;
+    font-weight: 400;
+    color: #3d352a;
+    /* Margins are no longer needed for spacing, flex 'gap' handles it */
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+}
+
+/* Use a more specific selector to ensure the style is applied */
+#start-screen .title-word {
+    font-size: 3rem;
+    line-height: 1; /* Tighten the line height */
+    text-transform: uppercase; /* Ensure the text is always capitalized */
+}
+
+.title-conjunction {
+    font-size: 2rem;
+    line-height: 1; /* Tighten the line height */
+}
+
+/* --- New Divider Element Styling --- */
+.title-divider {
+    font-family: 'IM Fell English', serif;
+    font-size: 0.75rem; /* Half the button font size */
+    font-style: italic; /* New: Italicize the text */
+    font-weight: 400;
+    text-shadow: none;
+    border-top: 2px solid #3d352a;
+    border-bottom: 2px solid #3d352a;
+    padding-top: 8px; /* Space between top line and text */
+    padding-bottom: 8px; /* Space between text and bottom line */
+    text-align: center; /* Ensure the text inside is centered */
+    width: 350px; /* Match the width of the buttons and input box */
+    box-sizing: border-box; /* Include padding and border in the element's total width and height */
+}
+
+/* --- Controls Container --- */
+.menu-controls {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px; /* This creates the even spacing between elements */
+    margin-top: 30px; /* Re-add spacing that was handled by gap */
+}
+
+/* --- Input and Button Styling --- */
+.menu-controls button {
+    font-family: 'IM Fell English', serif;
+    padding: 15px 30px;
+    width: 350px;
+    max-width: 100%;
+    box-sizing: border-box;
+    border-radius: 0; /* Sharp, squared corners */
+    background-color: #ddc09a;
+    border: none; /* Remove the full border */
+    border-top: 2px solid #3d352a; /* Top horizontal line, matches title text */
+    border-bottom: 2px solid #3d352a; /* Bottom horizontal line, matches title text */
+    color: #3d352a;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2); /* Added shadow for depth */
+    font-size: 1.5rem;
+    position: relative; /* Required for positioning the star pseudo-element */
+}
+
+.menu-controls button:hover {
+    background-color: #e8d0b1;
+    transform: translateY(-2px);
+}
+
+/* --- Start Menu Input Box --- */
+#start-screen .input-wrapper input[type="text"] {
+    font-family: 'IM Fell English', serif;
+    padding: 15px 30px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    border-radius: 0;
+    border: none;
+    border-top: 2px solid #3d352a;
+    border-bottom: 2px solid #3d352a;
+    color: #3d352a;
+    transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
+    font-size: 1.5rem;
+    position: relative; /* Required for positioning the star pseudo-element */
+    text-align: center;
+    cursor: text;
+    /* --- New Inner Rectangle Effect --- */
+    background-color: #ddc09a; /* Lighter background for the main input box */
+    background-image: linear-gradient(#c7b18f, #c7b18f); /* The darker inner rectangle */
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 336.5px 40.5px;
+}
+
+/* --- Shipyard Input Box (Smaller) --- */
+#shipyard-screen .input-wrapper input[type="text"] {
+    font-family: 'IM Fell English', serif;
+    padding: 7.5px 15px; /* Halved padding */
+    width: 100%; /* Input will fill its wrapper */
+    max-width: 100%;
+    box-sizing: border-box;
+    border-radius: 0;
+    border: none;
+    border-top: 2px solid #3d352a;
+    border-bottom: 2px solid #3d352a;
+    color: #3d352a;
+    transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
+    font-size: 0.75rem; /* Halved font size */
+    position: relative; /* Required for positioning the star pseudo-element */
+    text-align: center;
+    cursor: text;
+    /* --- New Inner Rectangle Effect --- */
+    background-color: #ddc09a; /* Lighter background for the main input box */
+    background-image: linear-gradient(#c7b18f, #c7b18f); /* The darker inner rectangle */
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 168px 20px; /* Halved background size */
+}
+
+/* --- New wrapper for the input to allow for star emblem --- */
+.input-wrapper {
+    position: relative; /* This will be the anchor for the star */
+    /* Width is now set per-screen */
+}
+
+#start-screen .input-wrapper {
+    width: 350px;
+}
+
+#shipyard-screen .input-wrapper {
+    width: 175px;
+}
+
+/* --- New: Star emblem on top of buttons --- */
+#start-screen .menu-controls button::before,
+#shipyard-screen .menu-controls button::before,
+#start-screen .input-wrapper::before {
+    content: '';
+    position: absolute;
+    width: 1.5em; /* Size relative to button font size */
+    height: 1.5em;
+    top: -1px; /* Nudge up by 1px for perfect alignment on the button's border */
+    left: 50%; /* Center horizontally */
+    transform: translate(-50%, -50%); /* Center the star on the line */
+    background-image: url("data:image/svg+xml,%3Csvg width='25' height='25' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.5 0 Q12.5 12.5 25 12.5 Q12.5 12.5 12.5 25 Q12.5 12.5 0 12.5 Q12.5 12.5 12.5 0 Z' fill='%233d352a'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* --- New: Responsive star sizing for the start screen --- */
+/* Use viewport width (vw) to make the star scale with the start-menu-container. */
+#start-screen .menu-controls button::before,
+#start-screen .input-wrapper::before {
+    width: 2vw;
+    height: 2vw;
+    min-width: 25px; /* Set a minimum size to prevent it from becoming too small */
+    min-height: 25px;
+    top: 0; /* Set the reference point to the top edge of the parent element. */
+    /* The transform below will then pull the star up by half its height, centering it on the line. */
+    transform: translate(-50%, -50%);
+}
+
+/* --- New: Specific alignment fix for the input box star --- */
+/* Nudge the star down by 1px to perfectly align its center on the top border line. */
+#start-screen .input-wrapper::before {
+    top: 3px;
+}
+
+/* --- New: Specific alignment fix for the button stars --- */
+/* Nudge the stars up by 1px for perfect alignment. */
+#start-screen .menu-controls button::before {
+    top: -1px;
+}
+
+
+/* --- New: Shared style for smaller Shipyard buttons (Back, Stats) --- */
+/* This applies the same base style as the main menu buttons but at a smaller scale.
+   We now include the #overall-hull-btn ID here to ensure it gets these base styles. */
+.shipyard-button-small {
+    font-family: 'IM Fell English', serif;
+    padding: 7.5px 15px; /* Halved padding to match smaller scale */
+    width: 125px; /* Reduced width to prevent overlap */
+    box-sizing: border-box;
+    border-radius: 0;
+    background-color: #ddc09a;
+    border: none;
+    border-top: 2px solid #3d352a;
+    border-bottom: 2px solid #3d352a;
+    color: #3d352a;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
+    font-size: 0.75rem; /* Halved font size */
+    margin-top: 10px; /* Add some space above the button */
+}
+
+/* --- Specific positioning for the Back button --- */
+#back-to-main-menu-btn {
+    /* It remains at the bottom of its container by default. */
+}
+
+/* --- Specific width for the Stats button --- */
+#stats-btn {
+    width: 60px;
+    margin-top: 0; /* Override margin to allow for vertical alignment */
+    padding-left: 0; /* Remove horizontal padding to allow text to center */
+    padding-right: 0; /* Remove horizontal padding to allow text to center */
+}
+
+/* --- New: Specific width for the Zoom button --- */
+#zoom-btn {
+    width: 60px;
+    margin-top: 0; /* Override margin to allow for vertical alignment */
+    padding-left: 0; /* Remove horizontal padding to allow text to center */
+    padding-right: 0; /* Remove horizontal padding to allow text to center */
+}
+
+/* --- New: Active (clicked) state for the Shipyard tab buttons --- */
+/* This applies the "pressed down" effect to both tab buttons when clicked. */
+#stats-btn:active, 
+#zoom-btn:active {
+    background-color: #e8d0b1; /* Lighten the color, same as other button hovers */
+    transform: translateY(1px); /* Give a subtle "pressed down" effect */
+}
+
+/* --- New: Change star color when input is focused --- */
+.input-wrapper:focus-within::before { /* This can remain a shared style */
+    /* Use the same SVG path, but change the fill color to the yellow focus color */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='-1 -1 14.5 14.5' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M6.25 -0.5 Q6.25 6.25 12.5 6.25 Q6.25 6.25 6.25 13 Q6.25 6.25 0 6.25 Q6.25 6.25 6.25 -0.5 Z' fill='%23f1c40f'/%3E%3C/svg%3E");
+}
+
+/* Make placeholder general again */
+.start-menu-container input[type="text"]::placeholder {
+    color: #7a6b54;
+}
+
+/* New: General focus style for inputs on both screens */
+.input-wrapper input:focus {
+    outline: 2px solid #f1c40f;
+}
+
+/* --- New: Shipyard Layout Adjustments --- */
+/* Reduce the gap for the shipyard screen to move content up */
+#shipyard-screen .start-menu-container {
+    gap: 0;
+    justify-content: normal; /* Use 'normal' as flex-start has no effect on positioned children */
+    pointer-events: none; /* New: Allow mouse events to pass through the container's empty space */
+}
+
+/* New: Re-enable pointer events for the direct children that need to be interactive */
+#shipyard-screen .start-menu-container > * {
+    pointer-events: auto;
+}
+
+/* --- Shipyard Specific Styles --- */
+.shipyard-title {
+    font-family: 'IM Fell English', serif;
+    font-size: 2rem;
+    font-weight: 400;
+    color: #3d352a;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+    margin: 0; /* Remove default top/bottom margins to allow for true even spacing */
+}
+
+.ship-preview-window {
+    flex-grow: 1; /* Allow the preview window to fill available vertical space */
+    min-height: 0; /* Prevents flexbox from overflowing with the aspect-ratio */
+    aspect-ratio: 2 / 1;
+    border: 2px solid #948064;
+    box-sizing: border-box;
+    position: relative; /* Needed to contain the canvas */
+}
+
+#ship-preview-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.options-scroll-menu {
+    /* Width will now be set by JavaScript to match the preview window */
+    flex-grow: 1; /* Allow the menu to fill the available space */
+    background-color: rgba(0, 0, 0, 0.1);
+    border: 2px solid #948064;
+    box-sizing: border-box;
+    overflow-y: auto; /* Enable scrolling */
+    overflow-x: hidden; /* Prevent horizontal scrolling */
+    padding: 15px;
+}
+
+/* --- New Shipyard Layout Containers --- */
+.shipyard-top-half,
+.shipyard-bottom-half {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0; /* Remove gap to allow preview window to fill all space */
+    box-sizing: border-box; /* Ensure border and padding are included in the height */
+}
+
+/* New: Container for the shipyard title and focus dropdown */
+.shipyard-header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px; /* Space between title and dropdown */
+    margin-bottom: 10px; /* Space between header and preview window */
+}
+
+/* New: Add debug outlines to the main items in the top half */
+.shipyard-top-half > .shipyard-title,
+.shipyard-top-half > .ship-preview-window {
+} /* Removed debug outline */
+
+.shipyard-top-half {
+    position: absolute;
+    top: 40px; /* Align with parent padding */
+    left: 40px; /* Align with parent padding */
+    right: 40px; /* Align with parent padding */
+    height: calc(50% - 60px); /* Half the container minus half the input box and padding */
+    justify-content: flex-start; /* Align content to the top */
+}
+
+.shipyard-bottom-half {
+    position: absolute;
+    top: calc(50% + 20px); /* Start just below the central input box */
+    left: 40px; /* Align with parent padding */
+    right: 40px; /* Align with parent padding */
+    height: calc(50% - 60px); /* Fill the remaining space */
+    justify-content: flex-start; /* Align content to the top */
+}
+
+/* --- Corrected: Center the entire name/stats group on the midline --- */
+.shipyard-name-wrapper {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 5; /* Ensure it's on top of the containers */
+    display: flex;
+    justify-content: center; /* Center the input field */
+    align-items: center;
+    width: 100%; /* Make the wrapper span the full width of the parent */
+}
+
+/* Remove the incorrect absolute positioning from the child element */
+#shipyard-screen .input-wrapper {
+    position: static; /* Revert to normal flow within the flex container */
+    transform: none;
+    /* The wrapper is now centered, so the input inside it will also be centered. */
+}
+
+.options-section-header {
+    font-family: 'IM Fell English', serif;
+    font-size: 1.0rem;
+    color: #948064;
+    text-transform: uppercase;
+    text-align: center;
+    padding-top: 15px; /* Add space above the header */
+    padding-bottom: 5px; /* Space between text and line */
+    margin-bottom: 10px; /* Space below the line */
+    border-bottom: 1px solid #948064;
+    /* The first header shouldn't have extra space at the very top */
+    margin-top: -15px;
+}
+
+.option-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Allow content to wrap to the next line */
+    font-family: 'IM Fell English', serif;
+    font-size: 1.1rem; /* Slightly reduce font size for better fit */
+    color: #3d352a;
+    margin-bottom: 10px; /* Use margin for consistent spacing */
+    transition: all 0.3s ease; /* Smooth transition for expansion */
+}
+
+/* New: Wrapper for option labels to reliably capture hover events for tooltips */
+.option-label {
+    /* This class doesn't need specific styles, it's just a structural element for event targeting. */
+}
+
+/* --- New: Underline the ship name in the stats panel --- */
+#stats-ship-name {
+    text-decoration: underline;
+}
+
+/* New: Pin the labels to the left and the values to the right */
+/* This now correctly defines the stat item as a flex container. */
+.stat-item {
+    display: flex;
+    align-items: center;
+    width: 100%; /* Ensure the item takes up the full width to allow for spacing */
+    justify-content: space-between; /* Distribute space evenly */
+}
+
+/* --- New: Add a divider line between stat items --- */
+.stat-item:not(:last-child) {
+    border-bottom: 1px solid #3d352a; /* Match text color */
+    padding-bottom: 8px; /* Space between text and the line */
+    margin-bottom: 8px; /* Space between the line and the next item */
+}
+
+/* --- New: Beam Slider Styles --- */
+.beam-slider-wrapper,
+.draught-slider-wrapper {
+    padding-top: 15px;
+    padding-bottom: 15px;
+}
+
+.slider-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* New: Wrapper for the slider and its labels */
+.slider-input-group {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1; /* Allow this group to fill the available space */
+}
+
+/* --- New: Slider Label Styles --- */
+.slider-labels {
+    display: flex;
+    justify-content: space-between;
+    /* Width is now handled by the parent flex container */
+    padding: 0; /* No longer needed */
+    box-sizing: border-box;
+    font-size: 0.7rem; /* Make the font smaller than the main option text */
+    color: rgba(61, 53, 42, 0.7); /* Use the text color but make it semi-transparent */
+    font-style: italic;
+    pointer-events: none; /* Ensure labels don't interfere with mouse events */
+}
+
+
+#beam-ratio-value,
+#draught-value {
+    font-family: 'IM Fell English', serif;
+    color: #3d352a;
+    font-size: 1.1rem;
+    min-width: 60px; /* Prevent layout shift */
+    text-align: right;
+}
+
+/* --- Custom Slider Base --- */
+#beam-ratio-slider,
+#draught-slider {
+    -webkit-appearance: none; /* Remove default styles */
+    appearance: none;
+    width: 100%; /* Fill available space */
+    height: 10px; /* Height of the track */
+    background: transparent; /* Track color is handled by pseudo-elements */
+    cursor: pointer;
+}
+
+/* --- Slider Track Styling (Chrome/Safari) --- */
+#beam-ratio-slider::-webkit-slider-runnable-track,
+#draught-slider::-webkit-slider-runnable-track {
+    width: 100%;
+    height: 10px;
+    background: #c7b18f; /* Inner color, matches input fields */
+    border-top: 2px solid #3d352a;
+    border-bottom: 2px solid #3d352a;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15) inset; /* Subtle inner shadow */
+}
+
+/* --- Slider Thumb Styling (Chrome/Safari) --- */
+#beam-ratio-slider::-webkit-slider-thumb,
+#draught-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; /* Remove default styles */
+    appearance: none;
+    margin-top: -7px; /* (Track Height - Thumb Height)/2 - Border Width = (10 - 20)/2 - 2 = -7px */
+    width: 20px;
+    height: 20px;
+    background: #ddc09a;
+    border: 2px solid #3d352a;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.2s, transform 0.2s;
+}
+
+#beam-ratio-slider:hover::-webkit-slider-thumb,
+#draught-slider:hover::-webkit-slider-thumb {
+    background-color: #e8d0b1;
+}
+
+#beam-ratio-slider:focus::-webkit-slider-thumb,
+#draught-slider:focus::-webkit-slider-thumb {
+    outline: 2px solid #f1c40f;
+    outline-offset: 2px;
+}
+
+/* --- Firefox Specific Styles --- */
+/* You can add ::-moz-range-track and ::-moz-range-thumb styles here if needed for cross-browser consistency */
+
+
+/* New: When an item is expanded, it becomes a column and the picker is centered */
+.option-item.expanded {
+    margin-bottom: 20px; /* Increase margin when expanded */
+}
+
+/* --- New: Pop-up Color Picker Wrapper --- */
+.color-picker-wrapper {
+    /* This no longer needs to be a positioning anchor */
+}
+
+#pennant-color-swatch,
+#sail-color-swatch,
+#primary-hull-color-swatch,
+#secondary-hull-color-swatch,
+#bulwark-rail-color-swatch,
+#custom-spar-color-swatch,
+#custom-deck-color-swatch {
+    width: 50px;
+    height: 30px;
+    border: 2px solid #948064;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+/* --- New: HSV Color Picker --- */
+.hsv-picker-container { /* This is now the pop-up */
+    display: flex;
+    gap: 10px;
+    width: 100%; /* Take up the full width of the option item */
+    /* New: Styling for when it's inside the scroll menu */
+    background-color: rgba(0, 0, 0, 0.1);
+    padding: 15px;
+    border: 2px solid #948064;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    z-index: 10; /* Ensure it appears on top of other elements */
+}
+
+#color-box {
+    width: 150px;
+    height: 150px;
+    border: 2px solid #948064;
+    cursor: crosshair;
+    position: relative;
+    /* The base color will be set by JS. The gradients for saturation and value are layered on top. */
+    background-image:
+        linear-gradient(to right, white, transparent),
+        linear-gradient(to top, black, transparent);
+}
+
+#color-box-indicator {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border: 1px solid white;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px black;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+#hue-slider {
+    width: 20px;
+    height: 150px;
+    border: 2px solid #948064;
+    cursor: pointer;
+    position: relative;
+    background: linear-gradient(to bottom, hsl(0, 100%, 50%), hsl(60, 100%, 50%), hsl(120, 100%, 50%), hsl(180, 100%, 50%), hsl(240, 100%, 50%), hsl(300, 100%, 50%), hsl(360, 100%, 50%));
+}
+
+#hue-slider-indicator {
+    position: absolute;
+    width: 100%;
+    height: 20px;
+    height: 4px;
+    background-color: rgba(255, 255, 255, 0.8);
+    border-top: 1px solid black;
+    border-bottom: 1px solid black;
+    left: 0;
+    transform: translateY(-50%);
+    pointer-events: none; /* So it doesn't interfere with clicks on the spectrum */
+}
+
+/* --- New: Shipyard Tooltip Styles --- */
+#shipyard-tooltip {
+    position: fixed; /* Position relative to the viewport */
+    z-index: 200; /* Ensure it's on top of all other UI */
+    background-color: #ddc09a; /* Same background as the main panel */
+    border: 2px solid #948064; /* Same border color */
+    padding: 15px;
+    max-width: 250px; /* Prevent it from getting too wide */
+    font-family: 'IM Fell English', serif;
+    font-size: 0.9rem;
+    color: #3d352a;
+    text-align: left;
+    border-radius: 4px; /* Simple radius for a cleaner look */
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    pointer-events: none; /* The tooltip itself should not be interactive */
+    opacity: 0; /* Start fully transparent */
+    transition: opacity 0.2s ease-in-out; /* Smooth fade-in/out */
+}
+
+#shipyard-tooltip.visible {
+    opacity: 1; /* Make it visible */
+}
+
+/* --- Shipyard Dropdown Menus --- */
+#shipyard-screen select {
+    font-family: 'IM Fell English', serif;
+    font-size: 1rem;
+    color: #3d352a;
+    background-color: #ddc09a;
+    
+    /* Remove default browser styling */
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    
+    /* Custom styling to match theme */
+    border: none;
+    border-top: 2px solid #3d352a;
+    border-bottom: 2px solid #3d352a;
+    border-radius: 0;
+    padding: 5px 30px 5px 10px; /* Extra right padding for arrow */
+    cursor: pointer;
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.2);
+    transition: background-color 0.2s, box-shadow 0.2s;
+    
+    /* Custom Arrow (Dark Brown Triangle) */
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%233d352a%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 10px;
+    
+    /* Ensure it doesn't overflow or look tiny */
+    min-width: 80px;
+    max-width: 200px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+#shipyard-screen select:hover {
+    background-color: #e8d0b1;
+}
+
+#shipyard-screen select:focus {
+    outline: 2px solid #f1c40f;
+    outline-offset: 2px;
+}
+
+/* Styling options (limited support, but good for Chrome/Firefox on desktop) */
+#shipyard-screen select option {
+    background-color: #ddc09a;
+    color: #3d352a;
+    font-family: 'IM Fell English', serif;
+    padding: 5px;
+}
