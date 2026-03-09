@@ -7,8 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="stylesheet" href="../css/start-screen.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/start-screen.css">
 </head>
 <body>
     <div id="start-screen">
@@ -386,57 +386,56 @@
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
 
     <!-- Load your game scripts in order of dependency -->
-    <!-- Assumes a 'js' folder is at the same level as your 'html' folder -->
-    <script src="../js/modules/utils.js"></script>       <!-- Utility functions, no dependencies -->
-    <script src="../js/config.js"></script>      <!-- Game constants needed by classes -->
-    <script src="../js/data/items.js"></script>
-    <script src="../js/data/npc-roles.js"></script>
-    <script src="../js/data/ranks.js"></script>
-    <script src="../js/modules/ui.js"></script>          <!-- UI drawing functions (depends on config) -->
-    <script src="../js/modules/pathfinder.js"></script>  <!-- A* Pathfinder module -->
-    <script src="../js/modules/world-manager.js"></script> <!-- New: World streaming system -->
-    <script src="../js/modules/CargoIconSystem.js"></script>
-    <script src="../js/classes/obstacles_class/obstacle.js"></script> <!-- Base obstacle class -->
-    <script src="../js/classes/obstacles_class/rock.js"></script>     <!-- Rock class -->
-    <script src="../js/classes/obstacles_class/island.js"></script>    <!-- Island class -->
-    <script src="../js/classes/obstacles_class/shoal.js"></script>     <!-- Shoal class -->
-    <script src="../js/classes/obstacles_class/coralreef.js"></script> <!-- Coral Reef class -->
-    <script src="../js/classes/spatial_grid/spatialgrid.js"></script>  <!-- SpatialGrid class -->
-    <script src="../js/classes/ShipInventory.js"></script>
+    <script src="js/modules/utils.js"></script>       <!-- Utility functions, no dependencies -->
+    <script src="js/config.js"></script>      <!-- Game constants needed by classes -->
+    <script src="js/data/items.js"></script>
+    <script src="js/data/npc-roles.js"></script>
+    <script src="js/data/ranks.js"></script>
+    <script src="js/modules/ui.js"></script>          <!-- UI drawing functions (depends on config) -->
+    <script src="js/modules/pathfinder.js"></script>  <!-- A* Pathfinder module -->
+    <script src="js/modules/world-manager.js"></script> <!-- New: World streaming system -->
+    <script src="js/modules/CargoIconSystem.js"></script>
+    <script src="js/classes/obstacles_class/obstacle.js"></script> <!-- Base obstacle class -->
+    <script src="js/classes/obstacles_class/rock.js"></script>     <!-- Rock class -->
+    <script src="js/classes/obstacles_class/island.js"></script>    <!-- Island class -->
+    <script src="js/classes/obstacles_class/shoal.js"></script>     <!-- Shoal class -->
+    <script src="js/classes/obstacles_class/coralreef.js"></script> <!-- Coral Reef class -->
+    <script src="js/classes/spatial_grid/spatialgrid.js"></script>  <!-- SpatialGrid class -->
+    <script src="js/classes/ShipInventory.js"></script>
     
-    <script src="../js/classes/ship_class/baseship.js"></script>   <!-- Base ship class must be first -->
-    <script src="../js/classes/ship_class/CustomShip/Rigs/SquareRig.js"></script> <!-- Rig classes -->
-    <script src="../js/classes/ship_class/CustomShip/Rigs/SloopRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/BrigRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/ForeAndAftSloopRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/FullRiggedShipRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/SchoonerRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/ThreeMastSchoonerRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/BrigantineRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/BarqueRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/Rigs/BarquentineRig.js"></script>
-    <script src="../js/classes/ship_class/CustomShip/CustomShip.js"></script> <!-- Custom ship class -->
-    <script src="../js/classes/ship_class/cannonball.js"></script> <!-- Cannonball class, needed by Ship -->
-    <script src="../js/classes/ship_class/npcshipcombat.js"></script> <!-- The new CombatPilot class -->
-    <script src="../js/classes/ship_class/npcship.js"></script>    <!-- Base NPC class must be before its subclasses -->
-    <script src="../js/classes/ship_class/playership.js"></script> <!-- PlayerShip depends on Ship -->
-    <script src="../js/shipyard/HullGenerator.js"></script>    <!-- New: Shipyard generators -->
-    <script src="../js/shipyard/DeckGenerator.js"></script>
-    <script src="../js/shipyard/RiggingGenerator.js"></script>
-    <script src="../js/shipyard/ShipGenerator.js"></script>
-    <script src="../js/classes/ship_class/NPCship_subclass/npc-archetypes.js"></script> <!-- Load detailed NPC ship designs -->
-    <script src="../js/classes/ship_class/NPCship_subclass/navyshipcombat.js"></script> <!-- Navy combat behavior, depends on NpcShipCombat -->
-    <script src="../js/classes/ship_class/NPCship_subclass/merchantshipcombat.js"></script> <!-- Merchant combat behavior -->
-    <script src="../js/classes/ship_class/NPCship_subclass/navyship.js"></script> <!-- Navy subclass -->
-    <script src="../js/classes/ship_class/NPCship_subclass/merchantship.js"></script> <!-- Merchant subclass -->
-    <script src="../js/data/formations.js"></script> <!-- Fleet Formations -->
-    <script src="../js/classes/FleetManager.js"></script> <!-- Fleet Manager -->
-    <script src="../js/classes/ship_class/FleetPilot.js"></script> <!-- Fleet AI -->
-    <script src="../js/classes/ship_class/AlliedCombatPilot.js"></script> <!-- Allied Combat AI -->
-    <script src="../js/classes/ship_class/AlliedShip.js"></script> <!-- Allied Ship Class -->
-    <script src="../js/ui/FleetUI.js"></script> <!-- Fleet UI -->
-    <script src="../js/classes/ShorelineRenderer.js"></script> <!-- Shoreline Renderer -->
-    <script src="../js/game.js"></script>        <!-- Game object must be defined before main.js uses it -->
-    <script src="../js/main.js"></script>        <!-- Main logic runs last -->
+    <script src="js/classes/ship_class/baseship.js"></script>   <!-- Base ship class must be first -->
+    <script src="js/classes/ship_class/CustomShip/Rigs/SquareRig.js"></script> <!-- Rig classes -->
+    <script src="js/classes/ship_class/CustomShip/Rigs/SloopRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/BrigRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/ForeAndAftSloopRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/FullRiggedShipRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/SchoonerRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/ThreeMastSchoonerRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/BrigantineRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/BarqueRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/Rigs/BarquentineRig.js"></script>
+    <script src="js/classes/ship_class/CustomShip/CustomShip.js"></script> <!-- Custom ship class -->
+    <script src="js/classes/ship_class/cannonball.js"></script> <!-- Cannonball class, needed by Ship -->
+    <script src="js/classes/ship_class/npcshipcombat.js"></script> <!-- The new CombatPilot class -->
+    <script src="js/classes/ship_class/npcship.js"></script>    <!-- Base NPC class must be before its subclasses -->
+    <script src="js/classes/ship_class/playership.js"></script> <!-- PlayerShip depends on Ship -->
+    <script src="js/shipyard/HullGenerator.js"></script>    <!-- New: Shipyard generators -->
+    <script src="js/shipyard/DeckGenerator.js"></script>
+    <script src="js/shipyard/RiggingGenerator.js"></script>
+    <script src="js/shipyard/ShipGenerator.js"></script>
+    <script src="js/classes/ship_class/NPCship_subclass/npc-archetypes.js"></script> <!-- Load detailed NPC ship designs -->
+    <script src="js/classes/ship_class/NPCship_subclass/navyshipcombat.js"></script> <!-- Navy combat behavior, depends on NpcShipCombat -->
+    <script src="js/classes/ship_class/NPCship_subclass/merchantshipcombat.js"></script> <!-- Merchant combat behavior -->
+    <script src="js/classes/ship_class/NPCship_subclass/navyship.js"></script> <!-- Navy subclass -->
+    <script src="js/classes/ship_class/NPCship_subclass/merchantship.js"></script> <!-- Merchant subclass -->
+    <script src="js/data/formations.js"></script> <!-- Fleet Formations -->
+    <script src="js/classes/FleetManager.js"></script> <!-- Fleet Manager -->
+    <script src="js/classes/ship_class/FleetPilot.js"></script> <!-- Fleet AI -->
+    <script src="js/classes/ship_class/AlliedCombatPilot.js"></script> <!-- Allied Combat AI -->
+    <script src="js/classes/ship_class/AlliedShip.js"></script> <!-- Allied Ship Class -->
+    <script src="js/ui/FleetUI.js"></script> <!-- Fleet UI -->
+    <script src="js/classes/ShorelineRenderer.js"></script> <!-- Shoreline Renderer -->
+    <script src="js/game.js"></script>        <!-- Game object must be defined before main.js uses it -->
+    <script src="js/main.js"></script>        <!-- Main logic runs last -->
 </body>
 </html>

@@ -1954,7 +1954,9 @@ const PlunderGame = (function() {
      * @private
      */
     function _createShoreGlowCacheForObstacle(obstacle) {
-        const points = obstacle.outerPerimeterPoints;
+        // --- FIX: Correctly get geometry for composite CoralReef objects ---
+        const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
+        const points = geometrySource.outerPerimeterPoints;
         if (!points || points.length === 0) return;
 
         const aabb = getPolygonAABB(points);
