@@ -1,6 +1,6 @@
 // --- Debugging Flags ---
 const DEBUG = {
-    ENABLED: true, // Master switch to toggle all debug visuals
+    ENABLED: false, // Master switch to toggle all debug visuals
     DRAW_TRIANGULATION: false,
     DRAW_BOW_STERN_MARKERS: false,
     DRAW_NPC_DESTINATIONS: true,
