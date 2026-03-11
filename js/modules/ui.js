@@ -75,7 +75,7 @@ function drawDayNightDial(ctx, canvas, dayNightTimer) {
     const dialSize = 60;
     const margin = 20;
     const windDialY = canvas.height - dialSize - margin;
-    const dialY = windDialY - dialSize - 10; // Position above wind dial
+    const dialY = windDialY - dialSize - 25; // Position above wind dial
     const dialX = canvas.width - dialSize - margin;
 
     const dialRadius = dialSize / 2;
@@ -175,7 +175,7 @@ function drawDayNightDebugButton(ctx, canvas) {
     const dialSize = 60;
     const margin = 20;
     const windDialY = canvas.height - dialSize - margin;
-    const dialY = windDialY - dialSize - 10;
+    const dialY = windDialY - dialSize - 25;
     const dialX = canvas.width - dialSize - margin;
 
     const btnW = 40;
@@ -2218,9 +2218,9 @@ function drawHudControls(ctx, canvas, player, hudMode = 'main', clickTimes = [],
         const combatBackY = buttonY + 5;
         const rowY = combatBackY - 25;
         const spacing = buttonDiameter + gap;
-        
-        // 5 Buttons: Open, Close, Reef, Crow's Nest, Anchor
-        const xOffsets = [-2.0, -1.0, 0.0, 1.2, 2.4].map(factor => factor * spacing);
+
+        // 6 Buttons: Open, Close, Reef, Crow's Nest, Anchor, Lights
+        const xOffsets = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map(factor => factor * spacing);
 
         xOffsets.forEach((xOffset, index) => {
             const isPressed = clickTimes[index] && (performance.now() - clickTimes[index] < 150);
@@ -2252,6 +2252,16 @@ function drawHudControls(ctx, canvas, player, hudMode = 'main', clickTimes = [],
                 ctx.closePath();
                 ctx.fill();
                 ctx.restore();
+
+                // --- NEW: Active state indicator for "Full Sail" ---
+                if (player.isSailOpen && !player.isReefed) {
+                    ctx.strokeStyle = '#FFD700'; // Gold
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, buttonRadius - 3, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
                 if (Math.hypot(mouseX - (centerX + xOffset), mouseY - rowY) <= buttonRadius) {
                     drawLabel("Open Sails", centerX + xOffset, rowY + buttonRadius + 2);
                 }
@@ -2269,6 +2279,16 @@ function drawHudControls(ctx, canvas, player, hudMode = 'main', clickTimes = [],
                 ctx.bezierCurveTo(-7, -4, 7, -4, 13, -10);
                 ctx.fill();
                 ctx.restore();
+
+                // --- NEW: Active state indicator for "Closed/Furled" ---
+                if (!player.isSailOpen) {
+                    ctx.strokeStyle = '#FFD700'; // Gold
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, buttonRadius - 3, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+
                 if (Math.hypot(mouseX - (centerX + xOffset), mouseY - rowY) <= buttonRadius) {
                     drawLabel("Close Sails", centerX + xOffset, rowY + buttonRadius + 2);
                 }
@@ -2299,8 +2319,9 @@ function drawHudControls(ctx, canvas, player, hudMode = 'main', clickTimes = [],
                 ctx.stroke();
                 ctx.restore();
 
-                // Active Indicator (Yellow Ring)
-                if (player.isReefed) {
+                // --- MODIFIED: Active Indicator for "Reefed" state ---
+                // This is now mutually exclusive with the other sail state indicators.
+                if (player.isSailOpen && player.isReefed) {
                     ctx.strokeStyle = '#FFD700'; // Gold
                     ctx.lineWidth = 2;
                     ctx.beginPath();
@@ -2361,9 +2382,68 @@ function drawHudControls(ctx, canvas, player, hudMode = 'main', clickTimes = [],
                     drawLabel("Anchor", centerX + xOffset, rowY + buttonRadius + 2);
                 }
             }
+            else if (index === 5) { // Lights Toggle
+                ctx.save();
+                ctx.scale(0.5, 0.5);
+                // Draw a lightbulb icon
+                // Base
+                ctx.beginPath();
+                ctx.rect(-6, 8, 12, 4);
+                ctx.fill();
+                // Bulb
+                ctx.beginPath();
+                ctx.arc(0, 0, 10, 0, Math.PI * 2);
+                ctx.fill();
+                // Filament
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(-3, 0); ctx.lineTo(-3, 6);
+                ctx.moveTo(3, 0); ctx.lineTo(3, 6);
+                ctx.moveTo(-3, 3); ctx.lineTo(3, 3);
+                ctx.stroke();
+
+                // "Off" slash if lights are off
+                if (player && !player.lightsOn) {
+                    ctx.strokeStyle = 'red';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.moveTo(-12, -12);
+                    ctx.lineTo(12, 12);
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // Active indicator
+                if (player && player.lightsOn) {
+                    ctx.strokeStyle = '#FFD700'; // Gold
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, buttonRadius - 3, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                if (Math.hypot(mouseX - (centerX + xOffset), mouseY - rowY) <= buttonRadius) {
+                    drawLabel("Toggle Lights", centerX + xOffset, rowY + buttonRadius + 2);
+                }
+            }
             
             ctx.restore();
         });
+
+        // --- NEW: Add a visual divider between button groups ---
+        // This visually separates the sailing controls from the utility controls.
+        const dividerX = centerX; // Positioned in the gap between Reef and Crow's Nest
+        const dividerTopY = rowY - buttonRadius * 0.8; // Slightly shorter than button height
+        const dividerBottomY = rowY + buttonRadius * 0.8;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(dividerX, dividerTopY);
+        ctx.lineTo(dividerX, dividerBottomY);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'; // Faint white line
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
 
         // Draw Back Button (Same as combat)
         ctx.save();

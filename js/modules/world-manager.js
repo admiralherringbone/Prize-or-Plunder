@@ -420,13 +420,38 @@ class WorldManager {
      */
     _deactivateSector(sectorKey) {
         const sector = this.sectors.get(sectorKey);
-        if (!sector || sector.dynamic.length === 0) return;
+        if (!sector) return; // Safety check
 
-        console.log(`[WorldManager] Deactivating sector ${sectorKey}`);
+        // --- NEW: Release canvases for deactivating dynamic objects ---
+        if (sector.dynamic.length > 0) {
+            console.log(`[WorldManager] Deactivating sector ${sectorKey}, releasing ${sector.dynamic.length} dynamic canvases.`);
+            sector.dynamic.forEach(ship => {
+                // Custom ships have a hullCacheCanvas
+                if (ship.hullCacheCanvas) {
+                    window.CanvasManager.releaseCanvas(ship.hullCacheCanvas);
+                    ship.hullCacheCanvas = null; // Set to null to trigger re-caching on activation
+                }
+                // Base ships have a shipCacheCanvas
+                if (ship.shipCacheCanvas) {
+                    window.CanvasManager.releaseCanvas(ship.shipCacheCanvas);
+                    ship.shipCacheCanvas = null;
+                }
+            });
+        }
         
         // --- OPTIMIZATION: Just move instances ---
+        // The ship instances are moved to the 'abstract' list, preserving their state.
+        // Their canvas properties are now null, so they will be re-cached when activated.
         sector.abstract.push(...sector.dynamic);
         sector.dynamic = []; // Clear the dynamic list
+
+        // --- NEW: Release canvases for deactivating static objects ---
+        sector.static.forEach(obstacle => {
+            if (obstacle.visualCache) {
+                window.CanvasManager.releaseCanvas(obstacle.visualCache);
+                obstacle.visualCache = null;
+            }
+        });
     }
 
     /**

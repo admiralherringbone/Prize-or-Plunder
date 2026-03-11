@@ -116,17 +116,6 @@ const RIG_CLOSE_HAULED_ANGLES = {
  * This class extends the base Ship class to allow for dynamic geometry and attributes.
  */
 class CustomShip extends Ship {
-    /**
-     * Helper to get a shared offscreen canvas for temporary composite operations.
-     * This avoids creating new DOM elements every frame or draw call.
-     * @returns {HTMLCanvasElement}
-     */
-    static getSharedCutoutCanvas() {
-        if (!CustomShip._sharedCutoutCanvas) {
-            CustomShip._sharedCutoutCanvas = document.createElement('canvas');
-        }
-        return CustomShip._sharedCutoutCanvas;
-    }
 
     /**
      * Static cache for the surrender flag's tattered edge geometry.
@@ -1144,7 +1133,7 @@ class CustomShip extends Ship {
             const spread = Math.max(maxX - minX, maxY - minY);
             const volleyRadius = Math.max(CANNON_UNIT_SIZE, spread / 2 + CANNON_UNIT_SIZE);
             
-            volleys.push(new Volley(volleyX, volleyY, vx, vy, volleyRadius, this));
+            volleys.push(Volley.get(volleyX, volleyY, vx, vy, volleyRadius, this));
         }
         return true;
     }
@@ -1704,6 +1693,11 @@ class CustomShip extends Ship {
      * @private
      */
     _drawShipComponents(ctx, zoomLevel, windDirection) {
+        // --- FIX: Re-cache image if it was released by the WorldManager ---
+        if (!this.hullCacheCanvas && !this.skipCache) {
+            this._cacheShipImage();
+        }
+
         if (this.rigs) {
             this.rigs.forEach(rig => rig.drawSpritSail?.(ctx, zoomLevel, windDirection));
         }
@@ -1808,11 +1802,19 @@ class CustomShip extends Ship {
         // 2. Create and prepare the offscreen canvas.
         // --- OPTIMIZATION: Reuse existing canvas if dimensions match ---
         if (!this.hullCacheCanvas || this.hullCacheCanvas.width !== width || this.hullCacheCanvas.height !== height) {
-            this.hullCacheCanvas = document.createElement('canvas');
+            this.hullCacheCanvas = window.CanvasManager.getCanvas(width, height);
             this.hullCacheCanvas.width = width;
             this.hullCacheCanvas.height = height;
         }
         const offCtx = this.hullCacheCanvas.getContext('2d');
+
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are excessively large or due to browser issues.
+        if (!offCtx) {
+            console.warn(`Failed to get 2D context for ship hull cache. Width: ${width}, Height: ${height}.`, this);
+            this.hullCacheCanvas = null; // Ensure we don't try to use a failed canvas
+            return;
+        }
         offCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
         offCtx.clearRect(0, 0, width, height); // Clear previous content
 
@@ -2059,10 +2061,15 @@ class CustomShip extends Ship {
 
         const RESOLUTION_MULTIPLIER = 2; // Increase to 2x resolution for smoother cuts.
 
-        const offscreenCanvas = CustomShip.getSharedCutoutCanvas();
-        offscreenCanvas.width = width * RESOLUTION_MULTIPLIER;
-        offscreenCanvas.height = height * RESOLUTION_MULTIPLIER;
+        const offscreenCanvas = window.CanvasManager.getCanvas(width * RESOLUTION_MULTIPLIER, height * RESOLUTION_MULTIPLIER);
         const offCtx = offscreenCanvas.getContext('2d');
+
+        // Defensive check in case the manager fails (e.g., invalid dimensions)
+        if (!offCtx) {
+            console.error("Failed to get context for gunport cutout canvas.");
+            window.CanvasManager.releaseCanvas(offscreenCanvas); // Release the potentially broken canvas
+            return;
+        }
 
         // Scale the offscreen context to draw at the higher resolution.
         offCtx.scale(RESOLUTION_MULTIPLIER, RESOLUTION_MULTIPLIER);
@@ -2094,6 +2101,9 @@ class CustomShip extends Ship {
         // 3. Draw the final, pre-composited image onto the main canvas.
         // By specifying the original width/height, we let the browser downscale the hi-res image smoothly.
         ctx.drawImage(offscreenCanvas, bbox.minX, bbox.minY, width, height);
+
+        // --- NEW: Release the temporary canvas back to the pool ---
+        window.CanvasManager.releaseCanvas(offscreenCanvas);
 
         // --- New Debug Drawing ---
         // If the debug flag is on, draw the gunport cutouts again in red to visualize them.
@@ -2438,9 +2448,7 @@ class CustomShip extends Ship {
     
         const RESOLUTION_MULTIPLIER = 2; // Match the gunport resolution.
     
-        const offscreenCanvas = CustomShip.getSharedCutoutCanvas();
-        offscreenCanvas.width = width * RESOLUTION_MULTIPLIER;
-        offscreenCanvas.height = height * RESOLUTION_MULTIPLIER;
+        const offscreenCanvas = window.CanvasManager.getCanvas(width * RESOLUTION_MULTIPLIER, height * RESOLUTION_MULTIPLIER);
         const offCtx = offscreenCanvas.getContext('2d');
     
         // Scale the offscreen context to draw at the higher resolution.
@@ -2478,6 +2486,9 @@ class CustomShip extends Ship {
         // By specifying the original width/height, we let the browser downscale the hi-res image smoothly.
         ctx.drawImage(offscreenCanvas, bbox.minX, bbox.minY, width, height);
     
+        // --- NEW: Release the temporary canvas back to the pool ---
+        window.CanvasManager.releaseCanvas(offscreenCanvas);
+
         // 4. Draw the remaining superstructure components.
         this._drawBulwark(ctx, spardeck.bulwark, spardeck.bulwarkCutout);
         const spardeckCannons = spardeck.cannons || [];

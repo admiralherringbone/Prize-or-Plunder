@@ -41,6 +41,14 @@ class ShorelineRenderer {
             pCanvas.width = GRID_SIZE;
             pCanvas.height = GRID_SIZE;
             const pCtx = pCanvas.getContext('2d');
+
+            // Defensive check: If context creation fails, return early to prevent TypeError.
+            // This can happen if the browser has exhausted its resources for canvases.
+            if (!pCtx) {
+                console.warn(`Failed to get 2D context for wave grid pattern. Wave effects will be disabled.`);
+                ctx.restore(); // Ensure we don't leave the main context in a weird state.
+                return;
+            }
             pCtx.fillStyle = OCEAN_BLUE;
             pCtx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
             pCtx.strokeStyle = GRID_COLOR;
@@ -268,8 +276,12 @@ class ShorelineRenderer {
                         if (nextI < i) d2 += totalPerimeter;
 
                         const segLen = d2 - d1;
-                        // --- OPTIMIZATION: Reduced resolution (10 -> 15) ---
-                        const steps = Math.ceil(segLen / 15);
+                        // --- OPTIMIZATION: Dynamic Level of Detail ---
+                        // Reduce subdivision steps when the island is small on screen (low scale).
+                        // The divisor increases as scale decreases, reducing 'steps'.
+                        const baseDivisor = 15;
+                        const lodDivisor = baseDivisor / Math.max(0.1, Math.sqrt(scale));
+                        const steps = Math.ceil(segLen / lodDivisor);
 
                         const dx = x2 - x1;
                         const dy = y2 - y1;
@@ -357,7 +369,8 @@ class ShorelineRenderer {
                 ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
 
                 // 1. Large Foam Pass
-                if (!isRock) {
+                // --- LOD: Only draw large foam when reasonably zoomed in ---
+                if (!isRock && scale > 0.3) {
                     ctx.beginPath();
                     for (let i = 0; i < this.pointCount; i++) {
                         const currentDist = this.distBuffer[i];
@@ -375,7 +388,8 @@ class ShorelineRenderer {
                 }
 
                 // 2. Medium Foam Pass
-                if (!isRock) {
+                // --- LOD: Only draw medium foam when reasonably zoomed in ---
+                if (!isRock && scale > 0.2) {
                     ctx.beginPath();
                     for (let i = 0; i < this.pointCount; i++) {
                         const currentDist = this.distBuffer[i];

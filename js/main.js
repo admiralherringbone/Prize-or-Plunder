@@ -2347,6 +2347,10 @@ function initializeInventoryUI() {
     // 3. Setup Logic
     const screen = document.getElementById('inventory-screen');
     let currentPrimaryShip = null;
+    // --- OPTIMIZATION: Decouple inventory refresh from the game's render loop ---
+    let inventoryRefreshIntervalId = null;
+    const INVENTORY_REFRESH_INTERVAL = 250; // ms, refresh 4 times per second
+
     let currentSecondaryShip = null; // New: Track secondary ship for transfers
 
     // Helper to update panel bars
@@ -2685,6 +2689,32 @@ function initializeInventoryUI() {
             // Show search on cargo tab
             searchContainer.style.display = 'block';
 
+            // --- NEW: Calculate Edibles and Potables Totals ---
+            let totalEdibles = 0;
+            let totalPotables = 0;
+            if (ship.inventory && ship.inventory.cargo) {
+                ship.inventory.cargo.forEach(entry => {
+                    if (entry.item.subcategory === 'Edibles') {
+                        totalEdibles += entry.quantity;
+                    } else if (entry.item.subcategory === 'Potables') {
+                        totalPotables += entry.quantity;
+                    }
+                });
+            }
+
+            // --- NEW: Inject Summary Header ---
+            content += `
+            <div style="display: flex; justify-content: space-around; padding: 10px; background: rgba(61, 53, 42, 0.1); border-bottom: 1px solid #948064; margin-bottom: 10px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 12px; font-style: italic;">Edibles</div>
+                    <div style="font-size: 18px; font-weight: bold;">${Math.floor(totalEdibles)}</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 12px; font-style: italic;">Potables</div>
+                    <div style="font-size: 18px; font-weight: bold;">${Math.floor(totalPotables)}</div>
+                </div>
+            </div>`;
+
             // Placeholder for Cargo
             const crewItem = window.ITEM_DATABASE['crew'];
             let capacity = ship.inventory ? ship.inventory.capacity : 0;
@@ -2814,7 +2844,57 @@ function initializeInventoryUI() {
             // Hide search on crew tab
             searchContainer.style.display = 'none';
 
-            content = `<div class="inventory-detail-item"><strong>Manning:</strong> ${Math.round(ship.crew)} / ${ship.maxCrew}</div>`;
+            // --- NEW: Calculate Provisions in Days ---
+            let totalFoodCrewDays = 0;
+            let totalDrinkCrewDays = 0;
+ 
+            if (ship.inventory && ship.inventory.cargo) {
+                const FOOD_REQUIREMENT = 0.005;
+                const DRINK_REQUIREMENT = 0.005;
+ 
+                ship.inventory.cargo.forEach(entry => {
+                    // Look up item definition to ensure we have the dailyConsumption rate
+                    const itemDef = window.ITEM_DATABASE[entry.item.id];
+                    if (itemDef && itemDef.dailyConsumption > 0 && itemDef.weight > 0) {
+                        // 1. Get total mass of the item in this stack
+                        const totalMass = entry.quantity * entry.unitWeight;
+                        // 2. Convert mass to number of individual items
+                        const numItems = totalMass / itemDef.weight;
+                        
+                        // 3. Calculate how many "crew-days" this provides
+                        let crewDays = 0;
+                        if (itemDef.subcategory === 'Edibles') {
+                            crewDays = numItems * (itemDef.dailyConsumption / FOOD_REQUIREMENT);
+                            totalFoodCrewDays += crewDays;
+                        } else if (itemDef.subcategory === 'Potables') {
+                            crewDays = numItems * (itemDef.dailyConsumption / DRINK_REQUIREMENT);
+                            totalDrinkCrewDays += crewDays;
+                        }
+                    }
+                });
+            }
+
+            const currentCrew = Math.max(1, ship.crew); // Prevent division by zero
+            const foodDays = totalFoodCrewDays / currentCrew;
+            const drinkDays = totalDrinkCrewDays / currentCrew;
+
+            content = `
+            <div style="margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #948064;">
+                <div class="inventory-detail-item" style="border: 1px solid #948064; padding: 8px; margin-bottom: 8px; border-radius: 4px;">
+                    <div class="inventory-bar-label" style="align-items: center; font-size: 1.2em;">
+                        <span style="font-weight: normal;">Food Provisions</span>
+                        <strong>${foodDays.toFixed(1)} days</strong>
+                    </div>
+                </div>
+                <div class="inventory-detail-item" style="border: 1px solid #948064; padding: 8px; border-radius: 4px;">
+                    <div class="inventory-bar-label" style="align-items: center; font-size: 1.2em;">
+                        <span style="font-weight: normal;">Water & Drink</span>
+                        <strong>${drinkDays.toFixed(1)} days</strong>
+                    </div>
+                </div>
+            </div>`;
+
+            content += `<div class="inventory-detail-item"><strong>Manning:</strong> ${Math.round(ship.crew)} / ${ship.maxCrew}</div>`;
             
             content += `<div style="margin-top:10px; padding-top:5px;">`;
             
@@ -2951,9 +3031,9 @@ function initializeInventoryUI() {
         updatePanelBars(panel, ship);
 
         // 3. Image
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = 200;
-        tempCanvas.height = 200;
+        // --- OPTIMIZATION: Use CanvasManager to pool temporary canvases ---
+        const tempCanvas = window.CanvasManager.getCanvas(200, 200);
+
         const tempCtx = tempCanvas.getContext('2d');
         const origX = ship.x; const origY = ship.y; const origAngle = ship.angle;
         ship.x = 0; ship.y = 0; ship.angle = 0;
@@ -2978,6 +3058,7 @@ function initializeInventoryUI() {
         CustomShip.prototype.drawWorldSpace.call(ship, tempCtx, scale, Math.PI);
         ship.x = origX; ship.y = origY; ship.angle = origAngle;
         panel.querySelector('.inventory-ship-image').src = tempCanvas.toDataURL();
+        window.CanvasManager.releaseCanvas(tempCanvas); // Release canvas back to the pool
 
         // 4. Tabs Logic
         const tabs = panel.querySelectorAll('.inventory-tab');
@@ -3092,6 +3173,13 @@ function initializeInventoryUI() {
     window.openInventoryMenu = (primaryShip, secondaryShip = null) => {
         currentPrimaryShip = primaryShip;
         currentSecondaryShip = secondaryShip; // Store secondary
+
+        // --- OPTIMIZATION: Start a dedicated interval for UI refresh ---
+        // This decouples the DOM updates from the high-frequency canvas render loop.
+        if (inventoryRefreshIntervalId) clearInterval(inventoryRefreshIntervalId);
+        inventoryRefreshIntervalId = setInterval(window.refreshInventoryUI, INVENTORY_REFRESH_INTERVAL);
+        window.inventoryRefreshIntervalId = inventoryRefreshIntervalId; // Expose to game.js for clearing
+
         screen.style.display = 'flex';
         
         const leftPanel = document.getElementById('inventory-panel-left');

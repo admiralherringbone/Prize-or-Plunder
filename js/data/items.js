@@ -39,6 +39,7 @@ const ITEM_DATABASE = {
         weight: 0.1,
         description: "Hardtack, a simple, long-lasting biscuit. A staple for any sea voyage.",
         fixedSize: 'Container Size',
+        dailyConsumption: 0.1,
         primaryStorage: ['Sack', 'Crate'],
         cannotOccupy: [],
         tradeRating: TRADE_RATINGS.COMMON
@@ -52,6 +53,7 @@ const ITEM_DATABASE = {
         weight: 0.1,
         description: "Coarsely ground oats, a common and filling meal.",
         fixedSize: 'Container Size',
+        dailyConsumption: 0.1,
         primaryStorage: ['Barrel', 'Sack'],
         cannotOccupy: [],
         tradeRating: TRADE_RATINGS.COMMON
@@ -65,6 +67,7 @@ const ITEM_DATABASE = {
         weight: 0.2,
         description: "Salted and dried meat, preserved for long journeys.",
         fixedSize: 'Container Size',
+        dailyConsumption: 0.2,
         primaryStorage: ['Barrel', 'Crate'],
         cannotOccupy: [],
         tradeRating: TRADE_RATINGS.COMMON
@@ -78,6 +81,7 @@ const ITEM_DATABASE = {
         weight: 0.1,
         description: "A common source of nutrients for sailors.",
         fixedSize: 'Container Size',
+        dailyConsumption: 0.1,
         primaryStorage: ['Barrel', 'Sack'],
         cannotOccupy: [],
         tradeRating: TRADE_RATINGS.COMMON
@@ -91,6 +95,7 @@ const ITEM_DATABASE = {
         weight: 0.5,
         description: "A wheel of hard cheese, less prone to spoilage.",
         fixedSize: 'Container Size',
+        dailyConsumption: 0.5,
         primaryStorage: ['Barrel', 'Sack'],
         cannotOccupy: [],
         tradeRating: TRADE_RATINGS.COMMON
@@ -219,6 +224,7 @@ const ITEM_DATABASE = {
     'water': { 
         id: 'water', name: 'Water', category: ITEM_CATEGORIES.CONSUMABLE, subcategory: 'Potables', baseValue: 0.5, weight: 1, description: "Fresh water, the most critical supply for any voyage.",
         fixedSize: 'Container Size',
+        dailyConsumption: 1,
         primaryStorage: ['Barrel'],
         cannotOccupy: ['Sack', 'Crate', 'Chest', 'Coffer'],
         tradeRating: TRADE_RATINGS.COMMON
@@ -226,6 +232,7 @@ const ITEM_DATABASE = {
     'wine': { 
         id: 'wine', name: 'Wine', category: ITEM_CATEGORIES.CONSUMABLE, subcategory: 'Potables', baseValue: 20, weight: 1, description: "Fine wine, often traded or consumed by officers.",
         fixedSize: 'Container Size',
+        dailyConsumption: 1,
         primaryStorage: ['Barrel'],
         cannotOccupy: ['Sack', 'Crate', 'Chest', 'Coffer'],
         tradeRating: TRADE_RATINGS.VALUABLE
@@ -233,6 +240,7 @@ const ITEM_DATABASE = {
     'beer': { 
         id: 'beer', name: 'Beer', category: ITEM_CATEGORIES.CONSUMABLE, subcategory: 'Potables', baseValue: 6, weight: 1, description: "Common ale, safer to drink than water on long trips.",
         fixedSize: 'Container Size',
+        dailyConsumption: 1,
         primaryStorage: ['Barrel'],
         cannotOccupy: ['Sack', 'Crate', 'Chest', 'Coffer'],
         tradeRating: TRADE_RATINGS.COMMON
@@ -240,6 +248,7 @@ const ITEM_DATABASE = {
     'rum': { 
         id: 'rum', name: 'Rum', category: ITEM_CATEGORIES.CONSUMABLE, subcategory: 'Potables', baseValue: 40, weight: 1, description: "Distilled sugar spirit, essential for crew morale.",
         fixedSize: 'Container Size',
+        dailyConsumption: 1,
         primaryStorage: ['Barrel'],
         cannotOccupy: ['Sack', 'Crate', 'Chest', 'Coffer'],
         tradeRating: TRADE_RATINGS.VALUABLE

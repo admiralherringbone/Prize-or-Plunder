@@ -1,5 +1,24 @@
 class Cannonball {
+    static pool = [];
+
+    static get(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        if (Cannonball.pool.length > 0) {
+            const ball = Cannonball.pool.pop();
+            ball.init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+            return ball;
+        }
+        return new Cannonball(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    static release(ball) {
+        Cannonball.pool.push(ball);
+    }
+
     constructor(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        this.init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    init(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
         this.x = x;
         this.y = y;
         this.radius = radius;
@@ -15,9 +34,7 @@ class Cannonball {
         this.type = 'cannonball'; // Optimization for spatial grid checks
         this.maxDistance = CANNONBALL_MAX_TRAVEL_DISTANCE; // Default max distance
 
-        // --- FIX: Nudge the cannonball forward one frame's worth of movement. ---
-        // This prevents the cannonball from spawning inside its owner and causing an
-        // immediate self-collision, which was the root cause of the "tunneling" issue.
+        // --- FIX: Nudge the cannonball forward one frame's worth of movement. --- // This prevents the cannonball from spawning inside its owner and causing an // immediate self-collision, which was the root cause of the "tunneling" issue.
         this.x += this.vx * (1 / 60); // Assuming 60 FPS for a 1-frame nudge.
         this.y += this.vy * (1 / 60);
 
@@ -128,18 +145,38 @@ class Cannonball {
  * Two half-balls connected by a chain, spinning through the air.
  */
 class ChainShot extends Cannonball {
+    static pool = [];
+
+    static get(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        if (ChainShot.pool.length > 0) {
+            const ball = ChainShot.pool.pop();
+            ball.init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+            return ball;
+        }
+        return new ChainShot(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    static release(ball) {
+        ChainShot.pool.push(ball);
+    }
+
     constructor(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        // This call is a bit redundant but necessary to satisfy the 'super' call requirement.
+        // The real initialization happens in init().
+        super(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy) {
         // Chain Shot Mechanics:
         // Speed is 1/2 normal.
         // Collision box is a circle with diameter = full length.
         // Full length = 2 * Radius (ends) + 8 * Radius (chain) = 10 * Radius.
         // Collision Radius = 5 * Radius.
-        
         const baseRadius = radius;
         const collisionRadius = baseRadius * 5; 
         const adjustedSpeed = speed * CHAIN_SHOT_SPEED_MULTIPLIER;
 
-        super(x, y, angle, collisionRadius, adjustedSpeed, color, owner, inheritedVx, inheritedVy);
+        super.init(x, y, angle, collisionRadius, adjustedSpeed, color, owner, inheritedVx, inheritedVy);
 
         this.baseRadius = baseRadius; // Store original radius for drawing
         this.spinAngle = 0;
@@ -242,12 +279,33 @@ class ChainShot extends Cannonball {
  * A cluster of small balls that spread out over time.
  */
 class GrapeShot extends Cannonball {
+    static pool = [];
+
+    static get(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        if (GrapeShot.pool.length > 0) {
+            const ball = GrapeShot.pool.pop();
+            ball.init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+            return ball;
+        }
+        return new GrapeShot(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    static release(ball) {
+        GrapeShot.pool.push(ball);
+    }
+
     constructor(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        // This call is a bit redundant but necessary to satisfy the 'super' call requirement.
+        // The real initialization happens in init().
+        super(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy) {
         // Mechanics: Speed 1/2, Range 1/2
         const adjustedSpeed = speed * GRAPE_SHOT_SPEED_MULTIPLIER;
         
         // The collision radius starts at the base radius (cluster size) and expands.
-        super(x, y, angle, radius, adjustedSpeed, color, owner, inheritedVx, inheritedVy);
+        super.init(x, y, angle, radius, adjustedSpeed, color, owner, inheritedVx, inheritedVy);
 
         this.baseRadius = radius;
         this.subBallRadius = radius * GRAPE_SHOT_SUB_RADIUS_FACTOR;
@@ -257,7 +315,8 @@ class GrapeShot extends Cannonball {
 
         // Pre-calculate random offsets for the 15 balls within the unit circle.
         // We do this once to avoid math in the draw loop.
-        this.offsets = [];
+        if (!this.offsets) this.offsets = [];
+        this.offsets.length = 0;
         for (let i = 0; i < GRAPE_SHOT_COUNT; i++) {
             // Random point inside circle: sqrt(random) ensures uniform distribution
             const r = Math.sqrt(Math.random()) * (this.baseRadius - this.subBallRadius);
@@ -355,9 +414,29 @@ class GrapeShot extends Cannonball {
  * A cloud of shrapnel represented by a spikey, pulsing star.
  */
 class CanisterShot extends Cannonball {
+    static pool = [];
+
+    static get(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        if (CanisterShot.pool.length > 0) {
+            const ball = CanisterShot.pool.pop();
+            ball.init(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+            return ball;
+        }
+        return new CanisterShot(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    static release(ball) {
+        CanisterShot.pool.push(ball);
+    }
+
     constructor(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
+        // Redundant super call for constructor compliance.
+        super(x, y, angle, radius, speed, color, owner, inheritedVx, inheritedVy);
+    }
+
+    init(x, y, angle, radius, speed, color, owner, inheritedVx = 0, inheritedVy = 0) {
         const adjustedSpeed = speed * CANISTER_SHOT_SPEED_MULTIPLIER;
-        super(x, y, angle, radius, adjustedSpeed, color, owner, inheritedVx, inheritedVy);
+        super.init(x, y, angle, radius, adjustedSpeed, color, owner, inheritedVx, inheritedVy);
         
         this.baseRadius = radius;
         this.spreadFactor = 1.0;
@@ -456,7 +535,26 @@ class CanisterShot extends Cannonball {
  * This is a logical entity and is not drawn.
  */
 class Volley {
+    static pool = [];
+
+    static get(x, y, vx, vy, radius, owner) {
+        if (Volley.pool.length > 0) {
+            const volley = Volley.pool.pop();
+            volley.init(x, y, vx, vy, radius, owner);
+            return volley;
+        }
+        return new Volley(x, y, vx, vy, radius, owner);
+    }
+
+    static release(volley) {
+        Volley.pool.push(volley);
+    }
+
     constructor(x, y, vx, vy, radius, owner) {
+        this.init(x, y, vx, vy, radius, owner);
+    }
+
+    init(x, y, vx, vy, radius, owner) {
         this.x = x;
         this.y = y;
         this.vx = vx;
@@ -464,11 +562,10 @@ class Volley {
         this.radius = radius;
         this.owner = owner;
         this.distanceTraveled = 0;
-        this.initialX = x;
-        this.initialY = y;
         this.markedForRemoval = false;
         this.type = 'volley'; // For spatial grid identification
-
+        this.initialX = x;
+        this.initialY = y;
         // --- OPTIMIZATION: Cache AABB ---
         this.aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
         this._updateAABB();

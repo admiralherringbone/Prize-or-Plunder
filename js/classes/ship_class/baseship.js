@@ -139,6 +139,7 @@ class Ship {
         this.isOverCoralReef = false;
         this.islandCollisionNormal = null; // New: Stores the normal vector of the island collision.
         this.isAgainstIsland = false; // New: Flag for when the ship is colliding with an island.
+        this.daysStarving = 0; // New: Tracks how many days the crew has gone without full rations.
 
         this._initializeShipComponents(sailColor, pennantColor);
         this.hullStrokeColor = darkenColor(this._color, 10); // 10% darker for the hull outline, making it lighter
@@ -518,10 +519,18 @@ class Ship {
         if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) return;
 
         // 2. Create and prepare the offscreen canvas.
-        this.shipCacheCanvas = document.createElement('canvas');
+        this.shipCacheCanvas = window.CanvasManager.getCanvas(width, height);
         this.shipCacheCanvas.width = width;
         this.shipCacheCanvas.height = height;
         const offCtx = this.shipCacheCanvas.getContext('2d');
+
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are excessively large or due to browser issues.
+        if (!offCtx) {
+            console.warn(`Failed to get 2D context for base ship cache. Width: ${width}, Height: ${height}.`, this);
+            this.shipCacheCanvas = null; // Ensure we don't try to use a failed canvas
+            return;
+        }
         this.shipCacheOffset = { x: minX, y: minY };
         offCtx.translate(-minX, -minY);
 
@@ -597,6 +606,16 @@ class Ship {
     }
 
     /**
+     * New: Calculates the performance penalty due to starvation.
+     * 1.0 = No penalty. < 1.0 = Penalty.
+     * Penalty increases by 10% per day of starvation.
+     */
+    getStarvationPenalty() {
+        if (this.daysStarving <= 0) return 1.0;
+        return Math.max(0.1, 1.0 - (this.daysStarving * 0.1));
+    }
+
+    /**
      * New: Calculates the dynamic reload time based on crew availability.
      * Rules:
      * 1. Base efficient crew is 5 per cannon (2.0s reload).
@@ -614,20 +633,23 @@ class Ship {
         // Use the instance's specific base reload time (from blueprint/options)
         const baseTime = this.reloadTime || RELOAD_TIME_BASE_MS;
 
+        let calculatedTime;
         if (averageCrewPerCannon >= CREW_PER_CANNON_OPTIMAL) {
-            return baseTime;
+            calculatedTime = baseTime;
         } else if (averageCrewPerCannon >= 1) {
             // Linear increase: Base + (5 - avg) * 0.4s
             const missingAvg = CREW_PER_CANNON_OPTIMAL - averageCrewPerCannon;
-            return baseTime + (missingAvg * RELOAD_PENALTY_PER_MISSING_CREW_MS);
+            calculatedTime = baseTime + (missingAvg * RELOAD_PENALTY_PER_MISSING_CREW_MS);
         } else {
             // Below 1 crew per cannon.
             // Calculate time at 1 crew first based on the ship's specific base time
             const timeAtOneCrew = baseTime + ((CREW_PER_CANNON_OPTIMAL - 1) * RELOAD_PENALTY_PER_MISSING_CREW_MS);
             
             const uncrewedCannons = broadsideCount - this.crew;
-            return timeAtOneCrew + (uncrewedCannons * RELOAD_PENALTY_UNMANNED_MS);
+            calculatedTime = timeAtOneCrew + (uncrewedCannons * RELOAD_PENALTY_UNMANNED_MS);
         }
+        // Apply Starvation Penalty (Slower reload)
+        return calculatedTime / this.getStarvationPenalty();
     }
 
     /**
@@ -693,6 +715,40 @@ class Ship {
         }
 
         return true;
+    }
+
+    /**
+     * New: Helper to get the total quantity of an item in the inventory.
+     * @param {string} itemId 
+     * @returns {number}
+     */
+    getItemQuantity(itemId) {
+        if (!this.inventory || !this.inventory.cargo) return 0;
+        let total = 0;
+        for (const entry of this.inventory.cargo) {
+            if (entry.item.id === itemId) {
+                // ShipInventory stores 'quantity' as the number of items (or container units)
+                total += entry.quantity;
+            }
+        }
+        return total;
+    }
+
+    /**
+     * New: Helper to get the total mass of an item in the inventory.
+     * @param {string} itemId 
+     * @returns {number}
+     */
+    getItemMass(itemId) {
+        if (!this.inventory || !this.inventory.cargo) return 0;
+        let totalMass = 0;
+        for (const entry of this.inventory.cargo) {
+            if (entry.item.id === itemId) {
+                // entry.unitWeight is pre-calculated size of one unit in the entry (container or item)
+                totalMass += entry.quantity * entry.unitWeight;
+            }
+        }
+        return totalMass;
     }
 
     /**
@@ -863,13 +919,13 @@ class Ship {
         
         // --- NEW: Instantiate correct projectile type ---
         if (shotType === 'chain-shot') {
-            cannonballs.push(new ChainShot(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
+            cannonballs.push(ChainShot.get(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
         } else if (shotType === 'grape-shot') {
-            cannonballs.push(new GrapeShot(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
+            cannonballs.push(GrapeShot.get(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
         } else if (shotType === 'canister-shot') {
-            cannonballs.push(new CanisterShot(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
+            cannonballs.push(CanisterShot.get(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
         } else {
-            cannonballs.push(new Cannonball(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
+            cannonballs.push(Cannonball.get(muzzlePosition.x, muzzlePosition.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, this.vx, this.vy));
         }
 
         // --- NEW: Create a small Volley for this single shot ---
@@ -881,7 +937,7 @@ class Ship {
             
             const vx = Math.cos(fireAngle) * speed + this.vx;
             const vy = Math.sin(fireAngle) * speed + this.vy;
-            volleys.push(new Volley(muzzlePosition.x, muzzlePosition.y, vx, vy, dynamicRadius * 4, this));
+            volleys.push(Volley.get(muzzlePosition.x, muzzlePosition.y, vx, vy, dynamicRadius * 4, this));
         }
 
         // --- NEW: Create Visual Effect ---
@@ -930,13 +986,13 @@ class Ship {
         // --- NEW: Instantiate correct projectile type ---
         const shotType = this.selectedShotType || 'round-shot';
         if (shotType === 'chain-shot') {
-            cannonballs.push(new ChainShot(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
+            cannonballs.push(ChainShot.get(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
         } else if (shotType === 'grape-shot') {
-            cannonballs.push(new GrapeShot(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
+            cannonballs.push(GrapeShot.get(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
         } else if (shotType === 'canister-shot') {
-            cannonballs.push(new CanisterShot(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
+            cannonballs.push(CanisterShot.get(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
         } else {
-            cannonballs.push(new Cannonball(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
+            cannonballs.push(Cannonball.get(muzzleWorldPos.x, muzzleWorldPos.y, fireAngle, dynamicRadius, CANNONBALL_SPEED, CANNONBALL_COLOR, this, inheritedVx, inheritedVy));
         }
 
         // --- NEW: Create Visual Effect ---
@@ -1031,7 +1087,8 @@ class Ship {
             multiplier *= rigRatio;
         }
 
-        return multiplier;
+        // Apply Starvation Penalty
+        return multiplier * this.getStarvationPenalty();
     }
 
     /**
@@ -1596,15 +1653,25 @@ class Ship {
                 for (let i = trail.length - 1; i >= 0; i--) ctx.lineTo(wakeRightX[i], wakeRightY[i]);
             }
             ctx.closePath();
-            
-            // Fill with a gradient that fades out at the end
-            const startP = trail[0];
-            const endP = trail[trail.length - 1];
-            const gradient = ctx.createLinearGradient(startP.x, startP.y, endP.x, endP.y);
-            gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
-            gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
-            ctx.fillStyle = gradient;
-            ctx.fill();
+
+            // --- OPTIMIZATION: Draw wake as alpha-faded segments to avoid gradient creation ---
+            // This prevents creating new gradient objects every frame, reducing garbage collection pressure.
+            for (let i = 0; i < trail.length - 1; i++) {
+                const alphaRatio = 1 - (i / (trail.length - 1));
+                const currentAlpha = alpha * alphaRatio;
+
+                if (currentAlpha < 0.01) continue; // Skip drawing invisible segments
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${currentAlpha})`;
+
+                ctx.beginPath();
+                ctx.moveTo(wakeLeftX[i], wakeLeftY[i]);
+                ctx.lineTo(wakeLeftX[i + 1], wakeLeftY[i + 1]);
+                ctx.lineTo(wakeRightX[i + 1], wakeRightY[i + 1]);
+                ctx.lineTo(wakeRightX[i], wakeRightY[i]);
+                ctx.closePath();
+                ctx.fill();
+            }
         }
     }
 

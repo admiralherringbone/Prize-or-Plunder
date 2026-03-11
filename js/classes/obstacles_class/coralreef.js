@@ -63,10 +63,17 @@ class CoralReef {
 
         if (width <= 0 || height <= 0) return;
 
-        this.visualCache = document.createElement('canvas');
+        this.visualCache = window.CanvasManager.getCanvas(width, height);
         this.visualCache.width = width;
         this.visualCache.height = height;
         const ctx = this.visualCache.getContext('2d');
+
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are invalid or excessively large.
+        if (!ctx) {
+            console.warn(`Failed to get 2D context for coral reef cache. Width: ${width}, Height: ${height}.`, this);
+            return;
+        }
 
         this.visualCacheOffset = { x: aabb.minX - padding, y: aabb.minY - padding };
         ctx.translate(-this.visualCacheOffset.x, -this.visualCacheOffset.y);
@@ -109,6 +116,10 @@ class CoralReef {
     }
 
     drawWorldSpace(ctx, worldToScreenScale, windDirection) {
+        // --- FIX: Re-cache visuals if they were released by the WorldManager ---
+        if (!this.visualCache) {
+            this.cacheVisuals();
+        }
         if (this.visualCache) {
             ctx.drawImage(this.visualCache, this.visualCacheOffset.x, this.visualCacheOffset.y);
         }

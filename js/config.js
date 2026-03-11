@@ -440,7 +440,13 @@ function initializeAssetDependentConfigs(loadedSvgData) {
         SKULL_ICON_CACHE.width = width;
         SKULL_ICON_CACHE.height = height;
         const ctx = SKULL_ICON_CACHE.getContext('2d');
-        
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are excessively large or due to browser issues.
+        if (!ctx) {
+            console.warn(`Failed to get 2D context for skull icon cache. Width: ${width}, Height: ${height}.`);
+            return;
+        }
+
         ctx.translate(padding, padding);
         ctx.shadowColor = 'black';
         ctx.shadowBlur = 10;

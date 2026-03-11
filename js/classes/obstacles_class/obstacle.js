@@ -62,10 +62,17 @@ class Obstacle {
 
         if (width <= 0 || height <= 0) return;
 
-        this.visualCache = document.createElement('canvas');
+        this.visualCache = window.CanvasManager.getCanvas(width, height);
         this.visualCache.width = width;
         this.visualCache.height = height;
         const ctx = this.visualCache.getContext('2d');
+
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are invalid or excessively large.
+        if (!ctx) {
+            console.warn(`Failed to get 2D context for obstacle cache. Width: ${width}, Height: ${height}.`, this);
+            return;
+        }
 
         this.visualCacheOffset = { x: this.minX - padding, y: this.minY - padding };
 
@@ -92,6 +99,12 @@ class Obstacle {
     }
 
     drawWorldSpace(ctx, worldToScreenScale, windDirection) {
+        // --- FIX: Re-cache visuals if they were released by the WorldManager ---
+        // This ensures that when a static object's sector becomes active again,
+        // its visuals are re-rendered to a pooled canvas.
+        if (!this.visualCache) {
+            this.cacheVisuals();
+        }
         ctx.save();
         if (this.visualCache) {
             ctx.drawImage(this.visualCache, this.visualCacheOffset.x, this.visualCacheOffset.y);

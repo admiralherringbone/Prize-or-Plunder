@@ -16,6 +16,7 @@ class PlayerShip extends CustomShip {
         super(x, y, blueprint, options);
 
         // --- Player-Specific State ---
+        this.lightsOn = true; // Player can toggle ship lights at night
         this.selectedShotType = 'round-shot'; // New: Default shot type
         this.lastShotTypeSelectionTime = performance.now(); // New: Track time of last selection for UI display
         this.isSailOpen = false;

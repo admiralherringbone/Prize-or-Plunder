@@ -57,13 +57,23 @@ const PlunderGame = (function() {
     let hudButtonClickTimes = new Array(10).fill(0); // Generic click times for visual feedback
     let crowsNestActive = false; // New: Track if Crow's Nest button is held
 
-    // --- NEW: UI Refresh Timer ---
-    let inventoryRefreshTimer = 0;
-    const INVENTORY_REFRESH_INTERVAL = 250; // ms, refresh 4 times per second
-
     // --- NEW: Pirate Hunter State ---
     let pirateHunter = null;
     let pirateHunterRespawnTimer = 0;
+
+    // --- OPTIMIZATION: Object Pooling for Night Overlay ---
+    // These pools prevent creating hundreds of small objects every frame during nighttime rendering,
+    // which reduces garbage collector pressure and leads to smoother performance.
+    let lightData = [];
+    const lightDataPool = [];
+    const pointPool = [];
+
+    function getPointObject(x, y) {
+        if (pointPool.length > 0) {
+            const p = pointPool.pop(); p.x = x; p.y = y; return p;
+        }
+        return { x, y };
+    }
 
     // --- NEW: Pirate Hunter Squadron State (Rank 4+) ---
     let activeSquadronCount = 0;
@@ -112,6 +122,7 @@ const PlunderGame = (function() {
 
     // --- NEW: Day/Night Cycle State ---
     let dayNightTimer = 0; // 0 to DAY_NIGHT_CYCLE_DURATION
+    let previousDayNightTimer = 0; // To detect day wrap
     let ambientLightLevel = 1.0; // 1.0 = Day, 0.0 = Night (clamped later)
     let cachedLightSprite = null;
     let cachedColoredLightSprite = null;
@@ -264,6 +275,26 @@ const PlunderGame = (function() {
         return sharedDarknessCanvas;
     }
 
+    function getLightDataObject() {
+        if (lightDataPool.length > 0) {
+            const obj = lightDataPool.pop();
+            // The points array is already cleared by releaseLightDataObjects
+            return obj;
+        }
+        return { radius: 0, points: [] };
+    }
+
+    function releaseLightDataObjects() {
+        while (lightData.length > 0) {
+            const obj = lightData.pop();
+            // Release the inner point objects back to their pool
+            while (obj.points.length > 0) {
+                pointPool.push(obj.points.pop());
+            }
+            lightDataPool.push(obj);
+        }
+    }
+
     function drawNightOverlay(ctx, effectiveScale) {
         // Optimization: Skip if fully bright
         if (ambientLightLevel >= 0.99) return;
@@ -273,14 +304,19 @@ const PlunderGame = (function() {
         const maskCanvas = getDarknessMaskCanvas(width, height);
         const maskCtx = maskCanvas.getContext('2d');
 
-        // --- OPTIMIZATION: Pre-calculate light data ---
-        // Avoids double-iteration of ships and redundant trig calculations.
-        // Also ensures flicker is consistent between mask and glow passes.
-        const lightData = [];
+        // --- OPTIMIZATION: Release pooled light data from previous frame ---
+        // This clears the lightData array and returns all its objects to the pool.
+        releaseLightDataObjects();
         
         // Use allShips to avoid allocating a new array via spread/filter
         for (const ship of allShips) {
             if (!ship || ship.isSunk) continue;
+
+            // --- NEW: Check if lights are toggled on for this ship ---
+            // NPCs (and default) have lights on. Player can toggle them.
+            if (ship.lightsOn === false) { // Explicitly check for false
+                continue;
+            }
 
             // Sinking light flicker logic
             if (ship.isSinking) {
@@ -294,22 +330,24 @@ const PlunderGame = (function() {
             const radius = (ship.shipLength) * flicker;
             const screenRadius = radius * effectiveScale;
 
-            // Calculate world coords once
+            // --- OPTIMIZATION: Get a pooled light data object ---
+            const lightObj = getLightDataObject();
+            lightObj.radius = screenRadius;
+
             const bow = ship.getBowPointWorldCoords();
             const stern = ship.getSternPointWorldCoords();
             const midX = ship.x;
             const midY = ship.y;
-
-            const points = [];
             
             // Helper to transform and cull
             const addPoint = (wx, wy) => {
                 const sx = (wx - cameraX) * effectiveScale;
                 const sy = (wy - cameraY) * effectiveScale;
                 // Viewport culling
-                if (sx >= -screenRadius && sx <= width + screenRadius && 
+                if (sx >= -screenRadius && sx <= width + screenRadius &&
                     sy >= -screenRadius && sy <= height + screenRadius) {
-                    points.push({x: sx, y: sy});
+                    // --- OPTIMIZATION: Use pooled point objects ---
+                    lightObj.points.push(getPointObject(sx, sy));
                 }
             };
 
@@ -317,8 +355,57 @@ const PlunderGame = (function() {
             addPoint(midX, midY);
             addPoint(stern.x, stern.y);
 
-            if (points.length > 0) {
-                lightData.push({ radius: screenRadius, points: points });
+            if (lightObj.points.length > 0) {
+                lightData.push(lightObj);
+            } else {
+                // If no points were added (ship was culled), release the object immediately
+                // so it doesn't take up space in the lightData array.
+                lightDataPool.push(lightObj);
+            }
+        }
+
+        // --- NEW: Add Cannon Flashes to Light Data ---
+        // Iterate through active cannon effects to add muzzle flashes
+        for (const effect of cannonEffects) {
+            if (effect.type === 'fire') {
+                const progress = effect.life / effect.maxLife;
+                const intensity = 1.0 - progress;
+                
+                if (intensity > 0.05) {
+                    // Flash radius: Large enough to light up the deck/water (120 units base)
+                    const baseRadius = 120 * (effect.size || 1.0); 
+                    const radius = baseRadius * intensity * effectiveScale;
+                    
+                    const sx = (effect.x - cameraX) * effectiveScale;
+                    const sy = (effect.y - cameraY) * effectiveScale;
+
+                    // Viewport culling
+                    if (sx >= -radius && sx <= width + radius && 
+                        sy >= -radius && sy <= height + radius) {
+                        const lightObj = getLightDataObject();
+                        lightObj.radius = radius;
+                        lightObj.points.push(getPointObject(sx, sy));
+                        lightData.push(lightObj);
+                    }
+                }
+            }
+        }
+
+        // --- NEW: Add Explosion Flashes ---
+        for (const effect of damageEffects) {
+            const progress = effect.life / effect.maxLife;
+            const intensity = 1.0 - progress;
+            if (intensity > 0.05) {
+                const radius = (effect.maxRadius * 3.0) * intensity * effectiveScale;
+                const sx = (effect.x - cameraX) * effectiveScale;
+                const sy = (effect.y - cameraY) * effectiveScale;
+                if (sx >= -radius && sx <= width + radius &&
+                    sy >= -radius && sy <= height + radius) {
+                    const lightObj = getLightDataObject();
+                    lightObj.radius = radius;
+                    lightObj.points.push(getPointObject(sx, sy));
+                    lightData.push(lightObj);
+                }
             }
         }
 
@@ -716,12 +803,10 @@ const PlunderGame = (function() {
             const rowY = buttonY - 20;
             const spacing = buttonDiameter + gap;
             
-            // 5 Buttons: Open, Close, Reef, Crow's Nest, Anchor
-            // Layout: Group of 3 (Sailing), Crow's Nest, Anchor.
-            // Offsets: -2.0, -1.0, 0.0 (Sailing), 1.2 (Crow's Nest), 2.4 (Anchor)
-            const xOffsets = [-2.0, -1.0, 0.0, 1.2, 2.4].map(factor => factor * spacing);
+            // 6 Buttons: Open, Close, Reef, Crow's Nest, Anchor, Lights
+            const xOffsets = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map(factor => factor * spacing);
 
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 6; i++) {
                 if (distance({x: mouseX, y: mouseY}, {x: centerX + xOffsets[i], y: rowY}) <= buttonRadius) {
                     hudButtonClickTimes[i] = performance.now();
                     
@@ -739,6 +824,10 @@ const PlunderGame = (function() {
                         // Action handled by MouseDown/Up for hold, but we record click for visual feedback
                     } else if (i === 4) { // Anchor
                         toggleAnchor();
+                    } else if (i === 5) { // Lights Toggle
+                        if (player) {
+                            player.lightsOn = !player.lightsOn;
+                        }
                     }
                     return;
                 }
@@ -981,23 +1070,44 @@ const PlunderGame = (function() {
                 newIsland.proximityRadius = newIsland.maxDistanceToPerimeter * 0.5;
 
                 validPosition = true;
-                const potentialColliders = spatialGrid.query(newIsland);
+
+                // --- FIX: Expand the query area to include the anchor zone ---
+                // The default AABB is based on the physical island. We need to query a larger
+                // area to find islands whose anchor zones might overlap, even if their
+                // physical bodies do not.
+                const totalAnchorRadius = newIsland.maxDistanceToPerimeter + newIsland.proximityRadius;
+                const queryAABB = {
+                    minX: newIsland.x - totalAnchorRadius,
+                    minY: newIsland.y - totalAnchorRadius,
+                    maxX: newIsland.x + totalAnchorRadius,
+                    maxY: newIsland.y + totalAnchorRadius,
+                };
+                const potentialColliders = spatialGrid.query(queryAABB);
+
                 for (const existingObstacle of potentialColliders) {
-                    if (existingObstacle.type === 'island' || existingObstacle.type === 'rock') {
-                        let overlapFound = false;
-                        for (const newPart of newIsland.convexParts) {
-                            for (const existingPart of existingObstacle.convexParts) {
-                                if (checkPolygonCollision(newPart, existingPart)) {
-                                    overlapFound = true;
-                                    break;
-                                }
-                            }
-                            if (overlapFound) break;
-                        }
-                        if (overlapFound) {
+                    if (existingObstacle.type === 'island') {
+                        // For island-on-island checks, use a simple and generous circular check
+                        // based on their anchor zones to ensure ample space between them.
+                        const newIslandAnchorRadius = newIsland.maxDistanceToPerimeter + newIsland.proximityRadius;
+                        const existingIslandAnchorRadius = existingObstacle.maxDistanceToPerimeter + existingObstacle.proximityRadius;
+                        const minSafeDistance = newIslandAnchorRadius + existingIslandAnchorRadius;
+                        const distanceBetweenCenters = distance(newIsland, existingObstacle);
+
+                        if (distanceBetweenCenters < minSafeDistance) {
                             validPosition = false;
-                            break;
+                            break; // Overlaps an existing island's anchor zone, invalid position.
                         }
+                    } else if (existingObstacle.type === 'rock') {
+                        // For rocks, maintain the more precise physical collision check
+                        // to allow them to spawn closer to islands without overlapping.
+                        for (const newPart of newIsland.convexParts) {
+                            // A rock is a single convex part.
+                            if (checkPolygonCollision(newPart, existingObstacle.convexParts[0])) {
+                                validPosition = false;
+                                break;
+                            }
+                        }
+                        if (!validPosition) break;
                     }
                 }
                 attempts++;
@@ -1006,6 +1116,7 @@ const PlunderGame = (function() {
                 attachBoundingVolume(newIsland);
                 _createShoreGlowCacheForObstacle(newIsland);
                 worldManager.addStaticObject(newIsland);
+                spatialGrid.insert(newIsland);
             }
         }
 
@@ -1047,6 +1158,7 @@ const PlunderGame = (function() {
                 attachBoundingVolume(newRock);
                 _createShoreGlowCacheForObstacle(newRock);
                 worldManager.addStaticObject(newRock);
+                spatialGrid.insert(newRock);
             }
         }
 
@@ -1067,6 +1179,7 @@ const PlunderGame = (function() {
             newShoal.proximityRadius = newShoal.maxDistanceToPerimeter * 0.5;
             attachBoundingVolume(newShoal);
             worldManager.addStaticObject(newShoal);
+            spatialGrid.insert(newShoal);
         }
 
         // Generate Coral Reefs
@@ -1090,9 +1203,18 @@ const PlunderGame = (function() {
                 validPosition = true;
                 const potentialColliders = spatialGrid.query(tempRockBaseObstacle);
                 for (const existingObstacle of potentialColliders) {
-                    if (existingObstacle.type === 'island' || existingObstacle.type === 'rock') {
-                        validPosition = false;
-                        break;
+                    // Coral reefs should not overlap with any other solid object.
+                    if (existingObstacle.type === 'island' || existingObstacle.type === 'rock' || existingObstacle.type === 'coralReef') {
+                        // A reef's rock base is a single convex part. Check it against all parts of the existing obstacle.
+                        for (const existingPart of existingObstacle.convexParts) {
+                            if (checkPolygonCollision(tempRockBaseObstacle.convexParts[0], existingPart)) {
+                                validPosition = false;
+                                break;
+                            }
+                        }
+                        if (!validPosition) {
+                            break;
+                        }
                     }
                 }
                 if (validPosition) {
@@ -1109,6 +1231,7 @@ const PlunderGame = (function() {
                 attachBoundingVolume(newCoralReef);
                 _createShoreGlowCacheForObstacle(newCoralReef);
                 worldManager.addStaticObject(newCoralReef);
+                spatialGrid.insert(newCoralReef);
             }
         }
 
@@ -1117,9 +1240,7 @@ const PlunderGame = (function() {
         // --- NEW: Create the minimap cache after all static objects are generated ---
         _createMinimapCache(allObstacles);
 
-        // --- OPTIMIZATION: Insert static objects into the spatial grid ONCE ---
-        // This prevents re-inserting them every frame in the update loop.
-        allObstacles.forEach(obj => spatialGrid.insert(obj));
+        // Note: Static objects are now inserted incrementally during generation.
 
         maxObstacleProximityRadius = allObstacles.reduce((max, obs) => Math.max(max, obs.proximityRadius), 0);
     }
@@ -1312,6 +1433,14 @@ const PlunderGame = (function() {
         minimapCacheCanvas.width = CACHE_SIZE;
         minimapCacheCanvas.height = CACHE_SIZE;
         const cacheCtx = minimapCacheCanvas.getContext('2d');
+
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are excessively large or due to browser issues.
+        if (!cacheCtx) {
+            console.warn(`Failed to get 2D context for minimap cache. Width: ${CACHE_SIZE}, Height: ${CACHE_SIZE}.`);
+            minimapCacheCanvas = null; // Ensure we don't try to use a failed canvas
+            return;
+        }
 
         // Draw all static obstacles
         allStaticObstacles.forEach(obstacle => {
@@ -1956,10 +2085,14 @@ const PlunderGame = (function() {
     function _createShoreGlowCacheForObstacle(obstacle) {
         // --- FIX: Correctly get geometry for composite CoralReef objects ---
         const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
-        const points = geometrySource.outerPerimeterPoints;
+        const points = geometrySource.outerPerimeterPoints || geometrySource.points;
         if (!points || points.length === 0) return;
 
         const aabb = getPolygonAABB(points);
+        if (!isFinite(aabb.minX) || !isFinite(aabb.minY) || !isFinite(aabb.maxX) || !isFinite(aabb.maxY)) {
+            console.warn("Invalid AABB calculated for obstacle, skipping shore glow cache.", obstacle);
+            return;
+        }
         
         // --- NEW: Dynamic Sizing based on Obstacle Size ---
         const size = obstacle.boundingRadius || Math.max(aabb.maxX - aabb.minX, aabb.maxY - aabb.minY) / 2;
@@ -1968,15 +2101,27 @@ const PlunderGame = (function() {
         
         const margin = blurRadius * 2; // Margin to prevent blur from being clipped
 
-        const width = (aabb.maxX - aabb.minX) + margin * 2;
-        const height = (aabb.maxY - aabb.minY) + margin * 2;
+        // --- FIX: Round dimensions to integers to prevent errors creating the canvas ---
+        const width = Math.round((aabb.maxX - aabb.minX) + margin * 2);
+        const height = Math.round((aabb.maxY - aabb.minY) + margin * 2);
 
-        if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) return;
+        const MAX_CANVAS_DIMENSION = 16384; // Common browser limit for canvas dimensions
 
-        const cacheCanvas = document.createElement('canvas');
+        if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height) || width > MAX_CANVAS_DIMENSION || height > MAX_CANVAS_DIMENSION) {
+            console.warn(`Skipping shore glow cache creation due to invalid or excessive dimensions. Width: ${width}, Height: ${height}. Obstacle:`, obstacle);
+            return;
+        }
+
+        const cacheCanvas = window.CanvasManager.getCanvas(width, height);
         cacheCanvas.width = width;
         cacheCanvas.height = height;
         const cacheCtx = cacheCanvas.getContext('2d');
+        // Defensive check: If context creation fails, return early to prevent TypeError.
+        // This can happen if canvas dimensions are excessively large or due to browser issues.
+        if (!cacheCtx) {
+            console.warn(`Failed to get 2D context for shore glow cache. Width: ${width}, Height: ${height}. Obstacle:`, obstacle);
+            return;
+        }
 
         cacheCtx.translate(margin - aabb.minX, margin - aabb.minY);
 
@@ -2027,6 +2172,7 @@ const PlunderGame = (function() {
         fleetRespawnTimer = 0;
 
         dayNightTimer = 0; // Reset to morning
+        previousDayNightTimer = 0;
         ambientLightLevel = 1.0;
 
         // --- OPTIMIZATION: Recycle entities to pools ---
@@ -3407,8 +3553,6 @@ const PlunderGame = (function() {
         const inventoryScreen = document.getElementById('inventory-screen');
         if (inventoryScreen) {
             // --- NEW: Clear timers when closing ---
-            // This prevents a final refresh call after the menu is already closed.
-            inventoryRefreshTimer = 0;
             inventoryScreen.style.display = 'none';
         }
         const cargoDialog = document.getElementById('cargo-action-dialog');
@@ -3423,6 +3567,12 @@ const PlunderGame = (function() {
      * If boarding a surrendered ship, this also ends the boarding action.
      */
     function closeInventory() {
+        // --- OPTIMIZATION: Clear the UI refresh interval when closing the menu ---
+        if (window.inventoryRefreshIntervalId) {
+            clearInterval(window.inventoryRefreshIntervalId);
+            window.inventoryRefreshIntervalId = null;
+        }
+
         const inventoryScreen = document.getElementById('inventory-screen');
         if (inventoryScreen) {
             inventoryScreen.style.display = 'none';
@@ -4576,8 +4726,27 @@ const PlunderGame = (function() {
      * Removes entities that are marked for removal (e.g., destroyed cannonballs, sunken ships).
      */
     function cleanupEntities() {
-        cannonballs = cannonballs.filter(ball => !ball.markedForRemoval);
-        volleys = volleys.filter(volley => !volley.markedForRemoval);
+        // --- OPTIMIZATION: Use pooling for cannonballs ---
+        // Instead of filtering (which creates a new array and garbage), we iterate backwards
+        // and release used cannonballs back to their respective pools.
+        for (let i = cannonballs.length - 1; i >= 0; i--) {
+            const ball = cannonballs[i];
+            if (ball.markedForRemoval) {
+                // The ball's constructor (e.g., Cannonball, ChainShot) has a static 'release' method.
+                if (ball.constructor.release) {
+                    ball.constructor.release(ball);
+                }
+                // Remove the ball from the active array in-place.
+                cannonballs.splice(i, 1);
+            }
+        }
+        for (let i = volleys.length - 1; i >= 0; i--) {
+            const volley = volleys[i];
+            if (volley.markedForRemoval) {
+                Volley.release(volley);
+                volleys.splice(i, 1);
+            }
+        }
 
         // --- New Respawn Logic ---
         // Iterate backwards to safely remove items while looping.
@@ -4651,6 +4820,71 @@ const PlunderGame = (function() {
             if (ship.y < 0) { ship.y = 0; ship.vy *= -0.5; }
             if (ship.y > WORLD_HEIGHT) { ship.y = WORLD_HEIGHT; ship.vy *= -0.5; }
         });
+    }
+
+    /**
+     * Processes daily food and drink consumption for a ship.
+     * @param {Ship} ship 
+     */
+    function processDailyConsumption(ship) {
+        if (!ship || ship.crew <= 0 || ship.isSunk) return;
+    
+        const FOOD_REQUIREMENT = 0.005;
+        const DRINK_REQUIREMENT = 0.005;
+    
+        // Consumption Priorities (Heaviest/Least Efficient first to clear space)
+        const priorities = {
+            drink: ['water', 'beer', 'rum', 'wine'],
+            food: ['dried-beef', 'dried-peas', 'oatmeal', 'biscuit', 'cheese']
+        };
+    
+        let fedStatus = { food: false, drink: false };
+    
+        // Helper to consume category
+        const consumeCategory = (category, requirement) => {
+            let crewToFeed = ship.crew;
+            
+            for (const itemId of priorities[category]) {
+                if (crewToFeed <= 0.1) break; // Stop if requirement is met
+    
+                const itemDef = window.ITEM_DATABASE[itemId];
+                if (!itemDef || !itemDef.dailyConsumption || !itemDef.weight) continue;
+    
+                // How many items of this type one crew member needs per day
+                const itemsPerCrew = requirement / itemDef.dailyConsumption;
+                
+                // Total items needed for all remaining crew
+                const totalItemsNeeded = crewToFeed * itemsPerCrew;
+                
+                // How many items do we actually have?
+                const availableMass = ship.getItemMass(itemId);
+                const availableItems = availableMass / itemDef.weight;
+    
+                const itemsToConsume = Math.min(totalItemsNeeded, availableItems);
+    
+                if (itemsToConsume > 0) {
+                    ship.consumeItem(itemId, itemsToConsume);
+                    const crewFed = itemsToConsume / itemsPerCrew;
+                    crewToFeed -= crewFed;
+                }
+            }
+            return crewToFeed <= 0.1; // Consider fed if remaining is negligible
+        };
+    
+        fedStatus.drink = consumeCategory('drink', DRINK_REQUIREMENT);
+        fedStatus.food = consumeCategory('food', FOOD_REQUIREMENT);
+    
+        if (fedStatus.drink && fedStatus.food) {
+            ship.daysStarving = 0;
+        } else {
+            ship.daysStarving++;
+            // Crew Loss: 5% of current crew * days starving (compounding effect)
+            const loss = Math.ceil(ship.crew * 0.05 * ship.daysStarving);
+            ship.crew = Math.max(0, ship.crew - loss);
+            if (ship === player && loss > 0) {
+                console.log(`[Daily Update] Crew starving! Lost ${loss} crew.`);
+            }
+        }
     }
 
         /**
@@ -4743,7 +4977,15 @@ const PlunderGame = (function() {
         window.windDirection = windDirection;
 
         // --- NEW: Update Day/Night Cycle ---
+        previousDayNightTimer = dayNightTimer;
         dayNightTimer = (dayNightTimer + deltaTime) % DAY_NIGHT_CYCLE_DURATION;
+        
+        // Check for day wrap (New Day)
+        if (dayNightTimer < previousDayNightTimer) {
+            // A new day has dawned. Process consumption.
+            allShips.forEach(ship => processDailyConsumption(ship));
+        }
+
         const cycleProgress = dayNightTimer / DAY_NIGHT_CYCLE_DURATION;
         
         // 0.0 - 0.45: Day (1.0)
@@ -4940,6 +5182,12 @@ const PlunderGame = (function() {
      * If boarding a surrendered ship, this also ends the boarding action.
      */
     function closeInventory() {
+        // --- OPTIMIZATION: Clear the UI refresh interval when closing the menu ---
+        if (window.inventoryRefreshIntervalId) {
+            clearInterval(window.inventoryRefreshIntervalId);
+            window.inventoryRefreshIntervalId = null;
+        }
+
         const inventoryScreen = document.getElementById('inventory-screen');
         if (inventoryScreen) {
             inventoryScreen.style.display = 'none';
@@ -4968,19 +5216,9 @@ const PlunderGame = (function() {
 
         // Update the state of all game objects
         update(deltaTime);
-        
-        const afterUpdate = performance.now();
 
-        // --- NEW: Live Inventory Refresh ---
-        if (boardingState.isInventoryOpen) {
-            inventoryRefreshTimer -= deltaTime;
-            if (inventoryRefreshTimer <= 0) {
-                if (window.refreshInventoryUI) {
-                    window.refreshInventoryUI();
-                }
-                inventoryRefreshTimer = INVENTORY_REFRESH_INTERVAL;
-            }
-        }
+        const afterUpdate = performance.now();
+        
         // Render the new state to the canvas
         draw();
 
