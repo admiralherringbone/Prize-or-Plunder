@@ -9,6 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/start-screen.css">
+    <link rel="stylesheet" href="css/loading-screen.css"> <!-- New: Loading Screen Styles -->
 </head>
 <body>
     <div id="start-screen">
@@ -371,6 +372,19 @@
 
     <canvas id="gameCanvas"></canvas>
 
+    <!-- New: Loading Screen -->
+    <div id="loading-screen" style="display: none;">
+        <div class="loading-title">
+            <div class="title-word">Prize</div>
+            <div class="title-conjunction">or</div>
+            <div class="title-word">Plunder</div>
+        </div>
+        <canvas id="loading-spinner-canvas"></canvas>
+        <div class="loading-bar-container">
+            <div id="loading-bar-fill"></div>
+        </div>
+    </div>
+
     <!-- New: Color Picker HTML is now outside the main flow, ready to be moved by JS -->
     <div id="hsv-popup" class="hsv-picker-container" style="display: none;">
         <div id="color-box">
@@ -388,6 +402,8 @@
     <!-- Load your game scripts in order of dependency -->
     <script src="js/modules/utils.js"></script>       <!-- Utility functions, no dependencies -->
     <script src="js/modules/CanvasManager.js"></script> <!-- New: Canvas pooling system -->
+    <script src="js/modules/LoadingScreenManager.js"></script> <!-- New: Loading Screen Manager -->
+    <script src="js/modules/ShipStatCalculator.js"></script> <!-- New: Ship Stat Calculator -->
     <script src="js/config.js"></script>      <!-- Game constants needed by classes -->
     <script src="js/data/items.js"></script>
     <script src="js/data/npc-roles.js"></script>

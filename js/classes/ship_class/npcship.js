@@ -200,8 +200,8 @@ class NpcShip extends CustomShip {
     _calculateCrewRequirements() {
         if (!this.blueprint) return { sailing: 20, fighting: 20 };
 
-        // Use the new method in CustomShip for sailing crew
-        const minSailingCrew = this._calculateMinSailingCrew();
+        // The minSailingCrew is now a property set by the CustomShip constructor.
+        const minSailingCrew = this.minSailingCrew || 5; // Use property, with a fallback.
         
         // Calculate fighting crew based on broadside
         const broadsideGuns = this.getBroadsideCount();

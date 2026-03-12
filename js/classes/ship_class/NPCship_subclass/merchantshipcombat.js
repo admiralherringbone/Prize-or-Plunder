@@ -154,7 +154,9 @@ class MerchantCombatPilot extends CombatPilot {
         // --- 2. Weights ---
         // Scale terrain weight by steeringWeight (short range urgency) to allow smoother transitions.
         // Long range avoidance is handled by the Lookout (via targetAngle), not this vector blend.
-        let wTerrain = (terrainAvoidanceVector.steeringWeight !== undefined ? terrainAvoidanceVector.steeringWeight : terrainAvoidanceVector.magnitude) * 30.0;
+        // --- MODIFIED: Incorporate braking weight for more urgent avoidance ---
+        // When a head-on collision is imminent, brakingWeight becomes non-zero, dramatically increasing the avoidance force.
+        let wTerrain = (terrainAvoidanceVector.magnitude + terrainAvoidanceVector.brakingWeight) * 30.0;
         let wSeparation = 2.0;
         let wCombat = 1.0;
         let wBroadside = 0.0;

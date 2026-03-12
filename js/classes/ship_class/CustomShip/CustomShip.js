@@ -151,50 +151,10 @@ class CustomShip extends Ship {
             ...baseOptions
         } = options;
 
-        // Call the parent constructor with the same default hull color as the PlayerShip
-        // to ensure good visual contrast with the deck.
-        // --- FIX: Safely access blueprint properties, providing defaults if it's null. ---
-        // --- FIX: Determine all necessary stats BEFORE the single super() call. ---
-        const reloadTime = blueprint?.stats?.reloadTime || PLAYER_CANNON_RELOAD_TIME_MS;
-        
-        // --- NEW: Calculate Max HP from Dimensions (Procedural) ---
-        let maxHp = 10; // Default fallback
-        if (blueprint && blueprint.dimensions && blueprint.layout) {
-            const dims = blueprint.dimensions;
-            const numDecks = blueprint.layout.numDecks || 1;
-            
-            // Formula: (Length + Beam + Draught) * NumDecks
-            // We use raw values here for better precision than the UI's toFixed() strings.
-            const lengthU = dims.length / CARGO_UNIT_SIZE;
-            const beamU = dims.width / CARGO_UNIT_SIZE;
-            const draughtU = (blueprint.draughtFactor * dims.width) / CARGO_UNIT_SIZE;
-            
-            let calculatedHp = (lengthU + beamU + draughtU) * numDecks;
-
-            // --- NEW: Add Superstructures (Castles & Decks) ---
-            // We add (Length + Width) for each structure, excluding deckhouses.
-            if (blueprint.geometry) {
-                const geo = blueprint.geometry;
-                const structures = ['forecastle', 'aftercastle', 'midcastle', 'sterncastle', 'spardeck', 'spardeckSterncastle'];
-                
-                structures.forEach(type => {
-                    if (geo[type]) {
-                        // Use hull points to determine bounds
-                        const points = geo[type].hull || geo[type].deck;
-                        if (points && points.length > 0) {
-                            const xs = points.map(p => p.x);
-                            const ys = points.map(p => p.y);
-                            const sLength = (Math.max(...xs) - Math.min(...xs)) / CARGO_UNIT_SIZE;
-                            const sWidth = (Math.max(...ys) - Math.min(...ys)) / CARGO_UNIT_SIZE;
-                            calculatedHp += (sLength + sWidth);
-                        }
-                    }
-                });
-            }
-            maxHp = Math.round(calculatedHp);
-        } else if (blueprint?.stats?.maxHp) {
-            maxHp = blueprint.stats.maxHp;
-        }
+        // --- REFACTOR: Use ShipStatCalculator to get all stats from the blueprint ---
+        const calculatedStats = ShipStatCalculator.getAllStats(blueprint);
+        const maxHp = calculatedStats.maxHp || 10;
+        const reloadTime = calculatedStats.reloadTime || PLAYER_CANNON_RELOAD_TIME_MS;
 
         // --- FIX: Make only ONE call to super() with all correct values. ---
         super(x, y, HULL_COLOR, maxHp, 8, 1, { ...baseOptions, reloadTime });
@@ -225,21 +185,12 @@ class CustomShip extends Ship {
         this.hullDamageCacheCanvas = null;
         this.lastCachedHullHpPercent = 1.0;
 
-        this.blueprint = blueprint;
-        this.rigs = []; // New: An array to hold all rig objects for this ship.
-
-        // --- New: Store custom hull colors ---
-        // The primary color is used for the main hull.
+        // Store colors
         this.primaryHullColor = primaryHullColor;
-        // A lighter version is derived for the bulwark base.
         this.lighterHullColor = lightenColor(primaryHullColor, 15);
-        // The secondary color is used for the bulwark top.
         this.secondaryHullColor = secondaryHullColor;
-        // New: Store the distinct bulwark rail color.
         this.bulwarkRailColor = bulwarkRailColor;
-        // New: Store custom spar colors
         this.sparDarkerColor = sparDarkerColor;
-        // New: Store custom deck colors
         this.deckColor = deckColor;
         this.deckPlankColor = darkenColor(deckColor, 20); // Auto-calculate plank color
 
@@ -250,11 +201,16 @@ class CustomShip extends Ship {
         this.dynamicTurningFactor = DYNAMIC_TURNING_FACTOR;
         this.shipLengthTurningPower = SHIP_LENGTH_TURNING_POWER;
         this.turningMomentumDamping = TURNING_MOMENTUM_DAMPING;
+        this.rigs = []; // New: An array to hold all rig objects for this ship.
 
         // Override base properties using the blueprint.
         // --- FIX: Only apply the blueprint if it actually exists. ---
         if (blueprint) {
+            this.blueprint = blueprint;
             this.applyBlueprint(blueprint);
+        } else {
+            // If no blueprint, we still need to initialize some things
+            this.blueprint = {};
         }
     }
 
@@ -285,28 +241,17 @@ class CustomShip extends Ship {
      */
     applyBlueprint(blueprint) {
         this.blueprint = blueprint;
-        this.rigs = []; // Clear existing rigs
 
         // --- Apply Stats from Blueprint ---
+        const stats = ShipStatCalculator.getAllStats(blueprint);
+        this.baseSpeed = (stats.cruisingSpeed || 0) / 60;
+        this.accelerationStat = (stats.acceleration || 0) / 3600;
+        const turningRateRadPerFrame = (stats.turningRate || 0) * (Math.PI / 180) / 60;
+        this.maneuverability = turningRateRadPerFrame / BASE_ROTATION_SPEED;
+        this.maxRigHp = stats.maxRigHp || 0;
+        this.rigHp = this.maxRigHp;
+        this.minSailingCrew = stats.minSailingCrew || 5;
         this.deckPlankCache = {}; // Clear plank cache
-
-        // Calculate physics values dynamically based on the blueprint configuration.
-        // We calculate them in "real" units (pixels/sec) and convert to "game" units (pixels/frame).
-        const rawCruisingSpeed = this.getCrusingSpeed(); // pixels/sec
-        const rawAcceleration = this.getAcceleration(); // pixels/sec^2
-
-        this.baseSpeed = rawCruisingSpeed / 60; // Convert to pixels/frame
-        this.accelerationStat = rawAcceleration / 3600; // Convert to pixels/frame^2
-
-        // --- NEW: Map the calculated turningRate (deg/sec) to the game's maneuverability multiplier. ---
-        // The in-game physics uses a 'maneuverability' multiplier. The shipyard calculates a 'turningRate' in deg/sec.
-        // We convert the shipyard stat into the multiplier the physics engine understands.
-        // BASE_ROTATION_SPEED is the baseline turn rate in radians per frame.
-        const turningRateDegPerSec = blueprint.stats?.turningRate || 0;
-        const turningRateRadPerSec = turningRateDegPerSec * (Math.PI / 180);
-        const turningRateRadPerFrame = turningRateRadPerSec / 60; // Assuming 60 FPS
-        this.maneuverability = turningRateRadPerFrame / BASE_ROTATION_SPEED; // Normalize against the base turning speed
-        // this.reloadTime is now correctly set in the constructor via the super() call.
         this._initializePhysicsModifiers();
 
         // --- Apply Geometry from Blueprint ---
@@ -351,12 +296,7 @@ class CustomShip extends Ship {
         this._precalculateAllDeckPlanks(); // Pre-calculate all deck planks
         this.sparColor = lightenColor(this.sparDarkerColor, 20);
         this.mastTopColor = this.sparColor;
-        // --- New: Initialize rigs first, then calculate rig-dependent stats. ---
         this._initializeRigs();
-        this.maxRigHp = this.getRigDurability();
-        this.rigHp = this.maxRigHp;
-        // --- New: Calculate Min Sailing Crew for physics penalties ---
-        this.minSailingCrew = this._calculateMinSailingCrew();
         // --- OPTIMIZATION: Pre-calculate cannon muzzle positions ---
         this._precalculateCannonMuzzles();
         
@@ -657,8 +597,34 @@ class CustomShip extends Ship {
 
         // --- 1. Calculate Deviation from Baseline ---
         // For L:B ratio, the baseline is the "average" for its configuration.
-        const formResistanceMultiplier = this._getFormResistanceMultiplier(); // This method calculates averageLBRatio internally.
-        const averageLBRatio = (1.0 - formResistanceMultiplier) / 0.05 + beamRatio; // Back-calculate the average
+        // --- FIX: Re-implement the averageLBRatio calculation locally to fix undefined method error. ---
+        // This logic was moved to ShipStatCalculator, but is still needed here for physics modifiers.
+        const { buildType, gunsPerBattery, cargoCapacity } = this.blueprint.dimensions;
+        const { numDecks } = this.blueprint.layout;
+
+        let sizeBasedMaxBeamRatio = 4.0;
+        if (buildType === 'guns') {
+            if (gunsPerBattery === 1) sizeBasedMaxBeamRatio = 2.0;
+            else if (gunsPerBattery === 2) sizeBasedMaxBeamRatio = 2.3;
+            else if (gunsPerBattery >= 3 && gunsPerBattery <= 4) sizeBasedMaxBeamRatio = 2.5;
+            else if (gunsPerBattery >= 5 && gunsPerBattery <= 7) sizeBasedMaxBeamRatio = 3.5;
+            else if (gunsPerBattery >= 8) sizeBasedMaxBeamRatio = 4.0;
+        } else if (buildType === 'cargo') {
+            if (cargoCapacity >= 1 && cargoCapacity <= 3) sizeBasedMaxBeamRatio = 2.0;
+            else if (cargoCapacity >= 4 && cargoCapacity <= 6) sizeBasedMaxBeamRatio = 2.3;
+            else if (cargoCapacity >= 7 && cargoCapacity <= 20) sizeBasedMaxBeamRatio = 2.5;
+            else if (cargoCapacity >= 21 && cargoCapacity <= 40) sizeBasedMaxBeamRatio = 3.5;
+            else if (cargoCapacity >= 41) sizeBasedMaxBeamRatio = 4.0;
+        }
+
+        let deckBasedMaxBeamRatio = 4.0;
+        if (numDecks === 2) deckBasedMaxBeamRatio = 3.75;
+        else if (numDecks === 3) deckBasedMaxBeamRatio = 3.5;
+
+        const maxAllowedBeamRatio = Math.min(sizeBasedMaxBeamRatio, deckBasedMaxBeamRatio);
+        const minAllowedBeamRatio = 2.0;
+        const averageLBRatio = (minAllowedBeamRatio + maxAllowedBeamRatio) / 2;
+
         const lbRatioDeviation = (beamRatio - averageLBRatio) / (4.0 - 2.0); // Normalize over the possible range
 
         // For draught, the baseline is 0.5.
@@ -767,220 +733,6 @@ class CustomShip extends Ship {
         
         const totalVolumeInPixels = midsectionVolume + taperedSectionsVolume;
         return Math.round(totalVolumeInPixels / (CARGO_UNIT_SIZE ** 3));
-    }
-
-    /**
-     * New: Calculates the ship's theoretical cruising speed based on its design.
-     * @returns {number} The final cruising speed in game units per second, rounded up.
-     */
-    getCrusingSpeed() {
-        // --- 1. Hull Speed Limit ---
-        // Found by multiplying 0.767 by the square root of the ship's length.
-        const hullSpeedLimit = 0.767 * Math.sqrt(this.shipLength);
-
-        // --- 2. Rig Efficiency Factor ---
-        // A lookup based on the rig type.
-        const rigEfficiencies = {
-            'full-rigged': 0.90,
-            'brig': 0.88,
-            'sloop': 0.85,
-            'fore-and-aft-sloop': 0.83,
-            'barque': 0.80,
-            'brigantine': 0.78,
-            'barquentine': 0.75,
-            'schooner': 0.75,
-            'three-mast-schooner': 0.75,
-            'square': 0.70
-        };
-        const rigEfficiencyFactor = rigEfficiencies[this.blueprint.layout.rigType] || 0.70; // Default to square rig
-
-        // --- 3. Stability Multiplier ---
-        // A penalty is applied if the selected draught is less than the 0.5 baseline.
-        let stabilityMultiplier = 1.0;
-        const selectedDraughtFactor = this.blueprint.draughtFactor;
-        const requiredDraughtFactor = 0.5;
-
-        if (selectedDraughtFactor < requiredDraughtFactor) {
-            const shortfall = requiredDraughtFactor - selectedDraughtFactor;
-            const reduction = shortfall * 1.5; // Penalty multiplier
-            stabilityMultiplier = 1.0 - reduction;
-        }
-
-        // --- 4. Cargo Multiplier ---
-        // A penalty based on how much of the cargo capacity is filled.
-        // For now, Crates Loaded is 0, so this will always be 1.0.
-        const cratesLoaded = 0; // Placeholder for future implementation
-        const maxCapacity = this.blueprint.dimensions.cargoCapacity || 1;
-        const cargoLoadFactor = cratesLoaded / maxCapacity;
-        const maxCargoPenalty = 0.20;
-        const cargoMultiplier = 1.0 - (cargoLoadFactor * maxCargoPenalty);
-
-        // --- 5. Form Resistance Multiplier ---
-        // This factor penalizes ships that are wider than their "average" configuration.
-        const formResistanceMultiplier = this._getFormResistanceMultiplier();
-
-        // --- 6. Final Speed Calculation ---
-        // Combine all factors to get the speed in knots.
-        const cruisingSpeedInKnots = hullSpeedLimit * rigEfficiencyFactor * stabilityMultiplier * cargoMultiplier * formResistanceMultiplier;
-
-        // --- 7. Conversion to Game Units ---
-        // Convert knots to game units per second.
-        // 1 knot = 1852 meters. 1 meter = 10 game units. 1 hour = 3600 seconds.
-        // (1852 * 10) / 3600 = ~5.1444. This is then divided by a balance factor.
-        const conversionFactor = 5.1444 / CRUISING_SPEED_BALANCE_FACTOR;
-        const finalCruisingSpeed = cruisingSpeedInKnots * conversionFactor * CRUISING_SPEED_MULTIPLIER;
-
-        // Return the final speed, rounded up to the nearest whole number.
-        return Math.ceil(finalCruisingSpeed);
-    }
-
-    /**
-     * New: Calculates the ship's acceleration based on its cruising speed and momentum.
-     * @returns {number} The acceleration value.
-     */
-    getAcceleration() {
-        // --- 1. Momentum Multiplier (MM) ---
-        // 1.0 + (Draught-to-Beam ratio * 0.2)
-        const draughtFactor = this.blueprint.draughtFactor;
-        const momentumMultiplier = 1.0 + (draughtFactor * 0.2);
-
-        // --- 2. Time Constant (T) ---
-        // 10 seconds * Momentum Multiplier (MM)
-        const timeConstant = ACCELERATION_BASE_TIME_SECONDS * momentumMultiplier;
-
-        // --- 3. Acceleration (A) ---
-        // Cruising Speed / Time Constant
-        const cruisingSpeed = this.getCrusingSpeed(); // Already in game units/sec
-        const acceleration = cruisingSpeed / timeConstant;
-
-        return acceleration; // Return raw number for physics calculations
-    }
-
-    /**
-     * New: Calculates a multiplier based on how the ship's L:B ratio deviates from the average for its size and type.
-     * @returns {number} The form resistance multiplier.
-     * @private
-     */
-    _getFormResistanceMultiplier() {
-        const { buildType, beamRatio, gunsPerBattery, cargoCapacity } = this.blueprint.dimensions;
-        const { numDecks } = this.blueprint.layout;
-
-        // This logic replicates the UI's constraints to find the maximum available beam ratio for this ship's configuration.
-        let sizeBasedMaxBeamRatio = 4.0;
-        if (buildType === 'guns') {
-            if (gunsPerBattery === 1) sizeBasedMaxBeamRatio = 2.0;
-            else if (gunsPerBattery === 2) sizeBasedMaxBeamRatio = 2.3;
-            else if (gunsPerBattery >= 3 && gunsPerBattery <= 4) sizeBasedMaxBeamRatio = 2.5;
-            else if (gunsPerBattery >= 5 && gunsPerBattery <= 7) sizeBasedMaxBeamRatio = 3.5;
-            else if (gunsPerBattery >= 8) sizeBasedMaxBeamRatio = 4.0;
-        } else if (buildType === 'cargo') {
-            if (cargoCapacity >= 1 && cargoCapacity <= 3) sizeBasedMaxBeamRatio = 2.0;
-            else if (cargoCapacity >= 4 && cargoCapacity <= 6) sizeBasedMaxBeamRatio = 2.3;
-            else if (cargoCapacity >= 7 && cargoCapacity <= 20) sizeBasedMaxBeamRatio = 2.5;
-            else if (cargoCapacity >= 21 && cargoCapacity <= 40) sizeBasedMaxBeamRatio = 3.5;
-            else if (cargoCapacity >= 41) sizeBasedMaxBeamRatio = 4.0;
-        }
-
-        let deckBasedMaxBeamRatio = 4.0;
-        if (numDecks === 2) deckBasedMaxBeamRatio = 3.75;
-        else if (numDecks === 3) deckBasedMaxBeamRatio = 3.5;
-
-        const maxAllowedBeamRatio = Math.min(sizeBasedMaxBeamRatio, deckBasedMaxBeamRatio);
-        const minAllowedBeamRatio = 2.0;
-
-        // The "ideal" or average L:B ratio is the midpoint of the available range for this ship configuration.
-        const averageLBRatio = (minAllowedBeamRatio + maxAllowedBeamRatio) / 2;
-
-        // Calculate the multiplier based on the deviation from the average.
-        // A ship that is wider than average (lower beamRatio) gets a penalty.
-        // A ship that is narrower than average (higher beamRatio) gets a bonus.
-        const formResistanceMultiplier = 1.0 - ((averageLBRatio - beamRatio) * 0.05);
-        return formResistanceMultiplier;
-    }
-
-    /**
-     * New: Calculates the ship's turning radius as a multiplier of its own length.
-     * @returns {string} The turning radius multiplier, formatted to two decimal places.
-     */
-    getTurningRadius() {
-        const { beamRatio } = this.blueprint.dimensions;
-        const { draughtFactor, rigType } = this.blueprint;
-
-        // 1. Baseline Turning Radius Multiplier (BaseTRM)
-        // 1.5 + ((L:B) * 0.5)
-        const baselineTRM = 1.5 + (beamRatio * 0.5);
-
-        // 2. Draft Correction (DC)
-        // ((D:B) - 0.4) * 1.0
-        const draftCorrection = (draughtFactor - 0.4) * 1.0;
-
-        // 3. Rig Correction (RC)
-        const rigCorrections = {
-            'full-rigged': 0.10,
-            'brig': 0.05,
-            'sloop': 0.00, // Mapped from 'square-rigged-sloop'
-            'fore-and-aft-sloop': -0.10,
-            'barque': 0.08,
-            'brigantine': 0.00,
-            'barquentine': 0.00,
-            'schooner': -0.05, // Mapped from '2-mast-schooner'
-            'three-mast-schooner': -0.05,
-            'square': 0.00
-        };
-        const rigCorrection = rigCorrections[rigType] || 0.00;
-
-        // 4. Total Turning Radius Multiplier
-        const totalMultiplier = baselineTRM + draftCorrection + rigCorrection;
-
-        // The final value is the multiplier itself, which represents the radius in ship lengths.
-        // (Total Length * Multiplier) / Total Length = Multiplier
-        return totalMultiplier.toFixed(2);
-    }
-
-    /**
-     * New: Calculates the ship's rate of turn at cruising speed.
-     * @returns {string} The turning speed (rate of turn) in degrees per second.
-     */
-    getTurningSpeed() {
-        // 1. Get the required inputs.
-        const cruisingSpeed = this.getCrusingSpeed(); // Velocity in units/sec
-        const turningRadiusMultiplier = parseFloat(this.getTurningRadius());
-        const shipLength = this.shipLength;
-
-        // 2. Calculate the actual turning radius in game units.
-        const turningRadiusInUnits = turningRadiusMultiplier * shipLength;
-
-        // Failsafe to prevent division by zero.
-        if (turningRadiusInUnits === 0) {
-            return '0.00';
-        }
-
-        // 3. Calculate Rate of Turn (ROT) using the formula: ROT = (Velocity * 57.3) / Radius
-        const rateOfTurn = (cruisingSpeed * 57.2958) / turningRadiusInUnits; // 57.2958 is 180/PI
-
-        return rateOfTurn.toFixed(2);
-    }
-
-    /**
-     * New: Gets the descriptive "best point of sail" for the ship's rig.
-     * @returns {string} The best point of sail text.
-     */
-    getBestPointOfSail() {
-        const rigType = this.blueprint.layout.rigType;
-        const pointsOfSail = {
-            'full-rigged': 'Running (Downwind)',
-            'brig': 'Running (Downwind)',
-            'sloop': 'Broad Reaching / Running', // Mapped from 'square-rigged-sloop'
-            'fore-and-aft-sloop': 'Close-Hauled / Beam Reaching',
-            'barque': 'Broad Reaching',
-            'brigantine': 'Broad Reaching',
-            'barquentine': 'Beam Reaching',
-            'schooner': 'Close-Hauled / Beam Reaching', // Mapped from '2-mast-schooner'
-            'three-mast-schooner': 'Close-Hauled / Beam Reaching',
-            'square': 'Running (Downwind)'
-        };
-
-        return pointsOfSail[rigType] || 'Unknown';
     }
 
     /**
@@ -1286,33 +1038,6 @@ class CustomShip extends Ship {
             }
         }
         return totalGuns;
-    }
-
-    /**
-     * New: Calculates the total durability of the ship's rigging based on its sails.
-     * The formula is (Sum of the largest dimension of each sail) / 2.
-     * @returns {number} The total rig durability HP, rounded.
-     */
-    getRigDurability() {
-        let totalSailDimension = 0;
-
-        if (!this.rigs || this.rigs.length === 0) {
-            return 0;
-        }
-
-        // Iterate through each rig attached to the ship.
-        this.rigs.forEach(rig => {
-            // Each rig class now has a method to report its sail dimension contribution.
-            if (typeof rig.getDurabilityContribution === 'function') {
-                totalSailDimension += rig.getDurabilityContribution();
-            }
-        });
-
-        // --- FIX: Convert total pixel dimension to game units before final calculation. ---
-        const totalDimensionInUnits = totalSailDimension / CARGO_UNIT_SIZE;
-        const rigDurability = totalDimensionInUnits / 2;
-
-        return Math.round(rigDurability);
     }
 
     /**
@@ -3290,73 +3015,5 @@ class CustomShip extends Ship {
         ctx.beginPath();
         ctx.arc(0, 0, this.mastTopRadius, 0, Math.PI * 2);
         ctx.fill();
-    }
-
-    /**
-     * Calculates the minimum sailing crew based on the ship's blueprint.
-     * Used to determine when turning penalties apply.
-     * @returns {number}
-     * @private
-     */
-    _calculateMinSailingCrew() {
-        if (!this.blueprint) return 5; // Default fallback
-
-        const { dimensions, layout } = this.blueprint;
-        const { length, width } = dimensions;
-        const rigType = layout.rigType;
-
-        let squareSailCrewValue = 0;
-        let foreAndAftCrewValue = 0;
-
-        const addCrewForSail = (estimatedLongestDim, type) => {
-            const dimInUnits = estimatedLongestDim / CARGO_UNIT_SIZE;
-            if (type === 'square') {
-                squareSailCrewValue += dimInUnits / 5;
-            } else { // fore-and-aft
-                foreAndAftCrewValue += dimInUnits / 10;
-            }
-        };
-
-        // Estimate sails based on rig type (Logic mirrors main.js stats)
-        switch (rigType) {
-            case 'sloop':
-            case 'fore-and-aft-sloop':
-                addCrewForSail(length * 0.6, 'fore-and-aft');
-                addCrewForSail(length * 0.5, 'fore-and-aft');
-                break;
-            case 'schooner':
-                addCrewForSail(length * 0.5, 'fore-and-aft');
-                addCrewForSail(length * 0.45, 'fore-and-aft');
-                addCrewForSail(length * 0.4, 'fore-and-aft');
-                break;
-            case 'square':
-                addCrewForSail(width * 1.8, 'square');
-                addCrewForSail(width * 1.4, 'square');
-                break;
-            case 'brig':
-            case 'brigantine':
-                addCrewForSail(width * 1.8, 'square');
-                addCrewForSail(width * 1.5, 'square');
-                addCrewForSail(width * 1.6, 'square');
-                addCrewForSail(width * 1.3, 'square');
-                addCrewForSail(length * 0.3, 'fore-and-aft');
-                break;
-            case 'full-rigged':
-            case 'barque':
-            case 'barquentine':
-            case 'three-mast-schooner':
-                addCrewForSail(width * 1.8, 'square');
-                addCrewForSail(width * 1.5, 'square');
-                addCrewForSail(width * 1.6, 'square');
-                addCrewForSail(width * 1.3, 'square');
-                addCrewForSail(width * 1.4, 'square');
-                addCrewForSail(length * 0.3, 'fore-and-aft');
-                addCrewForSail(length * 0.3, 'fore-and-aft');
-                break;
-        }
-
-        // Ensure at least 1 crew member is required
-        const minSailingCrew = Math.max(1, Math.floor(squareSailCrewValue + foreAndAftCrewValue));
-        return minSailingCrew;
     }
 }

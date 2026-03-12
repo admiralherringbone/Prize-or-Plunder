@@ -1528,14 +1528,18 @@ class Ship {
             if (i === 0) { // Port Bow
                 // Outward is Left (-PI/2) relative to ship heading
                 const outAngle = this.angle - Math.PI / 2;
-                // Velocity magnitude proportional to ship speed
-                const expansionSpeed = speed * 1.0; // Reverted to 1.0 for maximum visibility
+                // --- MODIFIED: Reduced the impact of ship width on wake expansion ---
+                // The multiplier now has a smaller range, making the effect more subtle.
+                const expansionMultiplier = 0.9 + (this.shipWidth / SHIP_TARGET_WIDTH) * 0.1;
+                const expansionSpeed = speed * expansionMultiplier;
                 pVx = Math.cos(outAngle) * expansionSpeed;
                 pVy = Math.sin(outAngle) * expansionSpeed;
             } else if (i === 1) { // Stbd Bow
                 // Outward is Right (+PI/2) relative to ship heading
                 const outAngle = this.angle + Math.PI / 2;
-                const expansionSpeed = speed * 1.0; // Reverted to 1.0
+                // --- MODIFIED: Reduced the impact of ship width on wake expansion ---
+                const expansionMultiplier = 0.9 + (this.shipWidth / SHIP_TARGET_WIDTH) * 0.1;
+                const expansionSpeed = speed * expansionMultiplier;
                 pVx = Math.cos(outAngle) * expansionSpeed;
                 pVy = Math.sin(outAngle) * expansionSpeed;
             }

@@ -861,7 +861,7 @@ const PlunderGame = (function() {
              const buttonDiameter = reloadBarDiameter; // Define buttonDiameter
              const spacing = buttonDiameter + gap;
              
-             const crowsNestX = centerX + (1.2 * spacing);
+             const crowsNestX = centerX + (0.5 * spacing);
              if (distance({x: mouseX, y: mouseY}, {x: crowsNestX, y: rowY}) <= buttonRadius) {
                  crowsNestActive = true;
              }
@@ -990,8 +990,9 @@ const PlunderGame = (function() {
 
     /**
      * Generates the game world with islands, rocks, and NPCs.
+     * @param {function} [progressCallback] - Optional function to report loading progress.
      */
-    function generateWorld() {
+    function generateWorld(progressCallback) {
         // Reset game entities
         // --- NEW: Instantiate the WorldManager ---
         // The sector size should be larger than the player's view distance.
@@ -1119,6 +1120,7 @@ const PlunderGame = (function() {
                 spatialGrid.insert(newIsland);
             }
         }
+        if (progressCallback) progressCallback(50);
 
         // Generate Rocks
         const numRocks = Math.round(ROCK_DENSITY * worldAreaFactor);
@@ -1161,6 +1163,7 @@ const PlunderGame = (function() {
                 spatialGrid.insert(newRock);
             }
         }
+        if (progressCallback) progressCallback(60);
 
         // Generate Shoals
         const numShoals = Math.round(SHOAL_DENSITY * worldAreaFactor);
@@ -1234,6 +1237,7 @@ const PlunderGame = (function() {
                 spatialGrid.insert(newCoralReef);
             }
         }
+        if (progressCallback) progressCallback(70);
 
         // After all obstacles are created, find the largest proximity radius for query optimization.
         const allObstacles = worldManager.getAllStaticObjects();
@@ -1249,7 +1253,7 @@ const PlunderGame = (function() {
      * Initializes the game world, static elements, and NPCs, but does NOT spawn the player.
      * This is called on page load to prepare the background for the start screen.
      */
-    function initializeWorld() {
+    function initializeWorld(progressCallback) {
         // This function is designed to be called once on page load.
         // It sets up everything needed to render the world *without* the player.
         // The gameLoop will be started separately by startGame().
@@ -1267,7 +1271,7 @@ const PlunderGame = (function() {
         lastWindChangeTime = performance.now();
         // --- FIX: Expose windDirection globally for legacy rig scripts ---
         window.windDirection = windDirection;
-        generateWorld();
+        generateWorld(progressCallback);
 
         // --- NEW: Initialize Shoreline Renderer ---
         shorelineRenderer = new ShorelineRenderer();

@@ -1654,7 +1654,7 @@ function drawHudControls(ctx, canvas, player, hudMode = 'main', clickTimes = [],
 
             // 2. Draw Ring
             ctx.beginPath();
-            ctx.arc(0, 0, 36, 0, Math.PI * 2);
+            ctx.arc(0, 0, UI_COMPASS_RING_RADIUS, 0, Math.PI * 2);
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 1 / scale;
             ctx.stroke();

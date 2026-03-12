@@ -1,0 +1,66 @@
+/* css/loading-screen.css */
+
+#loading-screen {
+    /* This is the positioning context for its children */
+    position: fixed; /* Use fixed to guarantee it covers the viewport */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #0c1a2e; /* Dark blue ocean color */
+    z-index: 9999; /* Highest z-index to be on top of everything */
+    color: white;
+    font-family: 'IM Fell English', serif;
+    /* New: Use Flexbox for simpler and more robust centering */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 30px; /* Space between title, spinner, and progress bar */
+}
+
+/* Reusing title styles from start-screen.css for consistency */
+.loading-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-weight: 400;
+    color: #ecf0f1; /* Light color for dark background */
+    text-shadow: 2px 2px 8px rgba(0,0,0,0.7);
+}
+
+.loading-title .title-word {
+    font-size: 3rem;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.loading-title .title-conjunction {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+#loading-spinner-canvas {
+    width: 100px;
+    height: 100px;
+    /* --- FIX: Override potential global canvas styles --- */
+    /* This ensures the canvas is treated as a normal flex item and can be centered. */
+    position: static;
+}
+
+.loading-bar-container {
+    width: 300px;
+    height: 5px; /* Reduced from 20px to 1/4 thickness */
+    background-color: rgba(255, 255, 255, 0.2);
+    border: 2px solid white;
+    padding: 2px;
+    border-radius: 10px; /* Rounded ends for the container */
+}
+
+#loading-bar-fill {
+    width: 0%; /* Starts at 0, updated by JS */
+    height: 100%;
+    background-color: white;
+    border-radius: 10px; /* Rounded ends for the fill */
+    transition: width 0.2s ease-out;
+}

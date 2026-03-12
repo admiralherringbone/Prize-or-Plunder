@@ -51,12 +51,7 @@ const CANNON_UNIT_SIZE = GRID_SIZE / 10; // Base length required for one cannon.
 const CARGO_UNIT_SIZE = GRID_SIZE / 10;  // Base length required for one unit of cargo.
 
 // --- Ship & Movement Constants ---
-const BASE_PLAYER_SPEED = 6;
-const NAVY_SHIP_SPEED = 6.5;   // Navy ships are slightly faster.
 const DECK_PLANK_SPACING = GRID_SIZE / 20; // The world-space distance between deck planks.
-const MERCHANT_SHIP_SPEED = 5.5; // Merchant ships are slightly slower.
-const NAVY_SHIP_HP = 10;       // Navy ships are tougher.
-const MERCHANT_SHIP_HP = 8;    // Merchant ships are more fragile.
 const PLAYER_MANEUVERABILITY = 1.0;   // Baseline maneuverability.
 const NAVY_MANEUVERABILITY = 0.85;  // Navy ships are less nimble.
 const MERCHANT_MANEUVERABILITY = 0.7; // Merchant ships are sluggish.
@@ -71,7 +66,7 @@ const LATERAL_DAMPING_FACTOR = 0.25; // How much sideways slip is reduced per fr
 const ACCELERATION_POWER_CURVE_EXPONENT = 1.0; // New: The exponent for the smooth acceleration curve. Higher is more dramatic.
 
 const CRUISING_SPEED_BALANCE_FACTOR = 1.0; // New: Global divisor to balance cruising speed. Set to 1.0 to nullify its effect.
-const CRUISING_SPEED_MULTIPLIER = 150; // New: Global multiplier for final cruising speed.
+const CRUISING_SPEED_MULTIPLIER = 100; // New: Global multiplier for final cruising speed.
 
 const SHIP_LENGTH_TURNING_POWER = 0.5; // How much length affects turning. 0.5 = square root, making the penalty significant but not overly harsh for large ships.
 const REGENERATION_COOLDOWN_TIME = 10000;
@@ -299,6 +294,34 @@ const PLAYER_COLLISION_FLASH_DURATION = 15;
 const SHIP_VIEWPORT_SCALE_FACTOR = 7; // The ship will take up 1/8th of the shorter screen dimension.
 const GAME_OVER_BLUR_RADIUS = 5; // Max blur radius in pixels. Set to 0 to disable for performance.
 
+const UI_COMPASS_RING_RADIUS = 36; // New: Radius for the decorative ring on compass-style icons.
+const UI_COMPASS_RING_THICKNESS = 4; // New: Line width for compass icon rings.
+const KNOTS_TO_GAME_UNITS_PER_SECOND = 5.1444; // Conversion factor for speed calculations.
+
+// --- NEW: Ship Design Balance Configuration ---
+const SHIP_DESIGN_RULES = {
+    BEAM_RATIO_MIN: 2.0,
+    GUN_BASED_MAX_BEAM_RATIO: [
+        { guns: 1, max: 2.0 },
+        { guns: 2, max: 2.3 },
+        { guns: 4, max: 2.5 },
+        { guns: 7, max: 3.5 },
+        { guns: Infinity, max: 4.0 }
+    ],
+    CARGO_BASED_MAX_BEAM_RATIO: [
+        { capacity: 3, max: 2.0 },
+        { capacity: 6, max: 2.3 },
+        { capacity: 20, max: 2.5 },
+        { capacity: 40, max: 3.5 },
+        { capacity: Infinity, max: 4.0 }
+    ],
+    DECK_BASED_MAX_BEAM_RATIO: {
+        1: 4.0,
+        2: 3.75,
+        3: 3.5
+    }
+};
+
 // --- Asset Paths ---
 const SHIP_HULL_VISUAL_SVG_URL = 'assets/svg/ship-hull-visual.svg';
 const SHIP_HULL_COLLISION_SVG_URL = 'assets/svg/ship-hull-collision.svg';
@@ -309,8 +332,8 @@ const GAFF_SAIL_UPPER_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xm
 const JIB_SAIL_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg width="100%" height="100%" viewBox="0 0 100 1000" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g transform="matrix(1,0,0,1,-24107.1,-47423.5)"><g transform="matrix(1,0,0,1,23157.1,46923.5)"><g transform="matrix(-6.88851e-17,1.12067,0.112067,6.75578e-18,-26.0852,-36035.3)"><path d="M33047.5,8709.83C33270.5,9602.15 33493.6,9602.15 33493.6,9602.15L32601.3,9602.15C32657.1,9602.15 32824.4,8709.83 33047.5,8709.83Z" style="fill:white;"/></g></g></g></svg>`);
 const GAFF_TOPSAIL_LOWER_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg width="100%" height="100%" viewBox="0 0 1000 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><g transform="matrix(1,0,0,1,500,50)"><g transform="matrix(1.01225,-1.37739e-17,-2.32434e-18,0.101225,-34194.5,-941.135)"><path d="M33945.3,8803.51C34274.6,8803.51 34274.6,9791.41 34274.6,9791.41L33286.7,9791.41C33286.7,9791.41 33616,8803.51 33945.3,8803.51Z" style="fill:white;"/></g></g></svg>`);
 const GAFF_TOPSAIL_UPPER_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8" standalone="no"?><!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"><svg width="100%" height="100%" viewBox="0 0 1000 100" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"><path d="M31657.1,12520C31657.1,12520 31513.1,12160 31513.1,11800C31513.1,11440 31657.1,11440 31657.1,11440C31657.1,11440 31621.1,11440 31621.1,11800C31621.1,12160 31657.1,12520 31657.1,12520Z" style="fill:white;"/></svg>`);
-const NAVIGATION_ICON_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8"?><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M50 5 L63 37 L95 50 L63 63 L50 95 L37 63 L5 50 L37 37 Z" fill="white" fill-rule="evenodd"/></svg>`);
-const NAVIGATION_ICON_DIAGONAL_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8"?><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><path d="M75.5 24.5 L64.7 50 L75.5 75.5 L50 64.7 L24.5 75.5 L35.3 50 L24.5 24.5 L50 35.3 Z" fill="white" fill-rule="evenodd"/></svg>`);
+const NAVIGATION_ICON_SVG_URL = 'assets/svg/Navigation Icon.svg';
+const NAVIGATION_ICON_DIAGONAL_SVG_URL = 'assets/svg/Navigation Icon Diagonal.svg';
 const CANNON_SVG_URL = 'assets/svg/cannon-visual.svg'; // New asset path
 const SKULL_ICON_SVG_URL = "data:image/svg+xml," + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">

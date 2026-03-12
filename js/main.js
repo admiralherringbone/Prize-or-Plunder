@@ -74,7 +74,7 @@ window.onload = async function() {
 
     // --- FIX: Programmatically update title text ---
     // Since index.html is static, we force the update here to ensure "Prize or Plunder" appears.
-    const titleContainer = document.querySelector('.title-container');
+    const titleContainer = document.querySelector('#start-screen .title-container');
     if (titleContainer) {
         titleContainer.innerHTML = `
             <div class="title-word">Prize</div>
@@ -247,14 +247,8 @@ window.onload = async function() {
      */
     function updateStatsDisplay() {
         const blueprint = shipGenerator.generateBlueprint();
-        // --- New: Create a temporary ship instance to access its calculation methods ---
-        // This is a clean way to get calculated stats without needing a full game object.
-        const tempShip = new CustomShip(0, 0, blueprint, {
-            sailColor: selectedSailColor,
-            pennantColor: selectedPennantColor
-        });
-
-        const { dimensions } = blueprint;
+        const stats = ShipStatCalculator.getAllStats(blueprint);
+        const { dimensions, layout } = blueprint;
 
         // Ship Name
         const shipName = shipNameInput.value.trim() || 'Unnamed';
@@ -262,7 +256,7 @@ window.onload = async function() {
 
         // Ship Type
         let shipType = '';
-        let rigName = blueprint.layout.rigType;
+        let rigName = layout.rigType;
 
         // --- New: Use the full display name for "full-rigged" type ---
         if (rigName === 'full-rigged') {
@@ -272,8 +266,8 @@ window.onload = async function() {
         if (shipGenerator.buildType === 'guns') {
             // Sum guns from all cannon layouts
             let totalGuns = 0;
-            for (const tier in blueprint.layout.cannonLayouts) {
-                totalGuns += blueprint.layout.cannonLayouts[tier].length;
+            for (const tier in layout.cannonLayouts) {
+                totalGuns += layout.cannonLayouts[tier].length;
             }
             // Add guns from superstructures
             if (blueprint.geometry.aftercastle?.cannons) totalGuns += blueprint.geometry.aftercastle.cannons.length;
@@ -306,100 +300,44 @@ window.onload = async function() {
         document.getElementById('stats-ship-draught').textContent = `${draughtInUnits} units`;
 
         // --- NEW: Hull Durability (maxHP) Calculation ---
-        // Use the value already calculated by the tempShip instance to ensure consistency.
-        const hullDurability = tempShip.maxHp;
-        document.getElementById('stats-hull-durability').textContent = `${hullDurability} HP`;
+        document.getElementById('stats-hull-durability').textContent = `${stats.maxHp} HP`;
 
         // --- NEW: Rig Durability Calculation ---
-        const rigDurability = tempShip.getRigDurability();
-        document.getElementById('stats-rig-durability').textContent = `${rigDurability} HP`;
+        document.getElementById('stats-rig-durability').textContent = `${stats.maxRigHp} HP`;
 
 
         // --- New: Burthen Calculation ---
-        // --- New: "Half-Elliptical Cylinder Method" for Burthen Hold ---
-        // This calculates the underwater volume of the hull.
-        // Volume of a half-ellipse prism: (PI * radiusA * radiusB * length) / 2
-        const burthenHold = tempShip.calculateBurthen();
-        document.getElementById('stats-ship-burthen-hold').textContent = `${burthenHold} units`;
-
-        const hullBurthen = burthenHold; // Use the new volumetric calculation as the base for total burthen.
-
-        // --- New: "Area Summation" for Superstructure Burthen ---
-        let superstructureBurthen = 0;
-        const CARGO_UNIT_AREA = CARGO_UNIT_SIZE * CARGO_UNIT_SIZE;
-
-        // Helper function to calculate burthen from a superstructure's geometry.
-        const calculateStructureBurthen = (structure) => {
-            if (!structure) return 0;
-            let area = 0;
-            // For hull-conforming structures (castles, spar-deck, stern cabin) which have a 'deck' polygon.
-            if (structure.deck && Array.isArray(structure.deck)) {
-                area = Math.abs(getPolygonArea(structure.deck)); // Use shoelace formula for area.
-            }
-            // For rectangular deckhouses which have 'outer' dimensions.
-            else if (structure.outer && structure.outer.length && structure.outer.width) {
-                area = structure.outer.length * structure.outer.width;
-            }
-            return area / CARGO_UNIT_AREA; // Convert raw area to burthen units.
-        };
-
-        // Add burthen from each potential superstructure.
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.forecastle);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.aftercastle);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.midcastle);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.sterncastle);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.spardeck);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.spardeckSterncastle);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.foreDeckhouse);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.midDeckhouse);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.aftDeckhouse);
-        superstructureBurthen += calculateStructureBurthen(blueprint.geometry.sternCabin);
-
-        // Multiply burthen by the number of decks for a more representative value.
-        const finalBurthen = Math.round(hullBurthen + superstructureBurthen);
-        document.getElementById('stats-ship-burthen').textContent = `${finalBurthen} units`;
+        document.getElementById('stats-ship-burthen-hold').textContent = `${stats.burthenHold} units`;
+        document.getElementById('stats-ship-burthen').textContent = `${stats.totalBurthen} units`;
 
         // --- New: Broadside Calculation ---
-        // The calculation is now handled by the CustomShip class itself.
-        const broadsideGuns = tempShip.getBroadsideCount();
-        document.getElementById('stats-ship-broadside').textContent = `${broadsideGuns} guns`;
+        document.getElementById('stats-ship-broadside').textContent = `${stats.broadside} guns`;
 
         // --- NEW: Min. Sailing Crew Calculation ---
-        // Use the value already calculated by the tempShip instance to ensure consistency.
-        const minSailingCrew = tempShip.minSailingCrew;
-        document.getElementById('stats-min-crew').textContent = minSailingCrew;
+        document.getElementById('stats-min-crew').textContent = stats.minSailingCrew;
 
         // --- New: Min. Fighting Crew Calculation ---
-        const minFightingCrew = minSailingCrew + (broadsideGuns * 5);
-        document.getElementById('stats-min-fighting-crew').textContent = minFightingCrew;
+        document.getElementById('stats-min-fighting-crew').textContent = stats.minFightingCrew;
 
         // --- NEW: Reload Time Display ---
-        // Display the optimal reload time (2s) since stats assume a fully crewed ship.
-        // We use the tempShip to get the calculation, assuming full crew.
-        // Note: tempShip.crew is initialized to maxCrew, which includes fighting crew.
-        const optimalReloadTime = tempShip.getReloadTime() / 1000;
+        const optimalReloadTime = stats.reloadTime / 1000;
         document.getElementById('stats-reload-time').textContent = `${optimalReloadTime.toFixed(1)} sec (Optimal)`;
 
 
         // --- New: Cruising Speed Calculation ---
-        const cruisingSpeed = tempShip.getCrusingSpeed();
-        document.getElementById('stats-cruising-speed').textContent = `${cruisingSpeed} units/sec`;
+        document.getElementById('stats-cruising-speed').textContent = `${stats.cruisingSpeed} units/sec`;
 
         // --- New: Acceleration Calculation ---
-        const acceleration = tempShip.getAcceleration();
-        document.getElementById('stats-acceleration').textContent = `${acceleration.toFixed(2)} units/sec²`;
+        document.getElementById('stats-acceleration').textContent = `${stats.acceleration.toFixed(2)} units/sec²`;
 
         // --- New: Turning Radius Calculation ---
-        const turningRadius = tempShip.getTurningRadius();
-        document.getElementById('stats-turning-radius').textContent = `${turningRadius} ship lengths`;
+        document.getElementById('stats-turning-radius').textContent = `${stats.turningRadius.toFixed(2)} ship lengths`;
 
         // --- New: Turning Rate Calculation ---
-        const turningRate = tempShip.getTurningSpeed();
-        document.getElementById('stats-turning-rate').textContent = `${turningRate} deg/sec`;
+        document.getElementById('stats-turning-rate').textContent = `${stats.turningRate.toFixed(2)} deg/sec`;
 
         // --- New: Best Point of Sail ---
-        const bestPointOfSail = tempShip.getBestPointOfSail();
-        document.getElementById('stats-best-point-of-sail').textContent = bestPointOfSail;
+        document.getElementById('stats-best-point-of-sail').textContent = stats.bestPointOfSail;
     }
 
     // --- Event Listener for the new Stats button ---
@@ -1704,8 +1642,13 @@ window.onload = async function() {
     // --- Asset Loading and Initialization ---
     console.log("Loading assets...");
 
+    // --- NEW: Show Loading Screen ---
+    window.LoadingScreenManager.show(true); // Show with progress bar
+    window.LoadingScreenManager.updateProgress(5);
+
     try {
         // Use Promise.all to fetch all SVG assets concurrently for performance.
+        window.LoadingScreenManager.updateProgress(10);
         const [
             shipHullVisualData,
             shipHullCollisionData,
@@ -1736,6 +1679,8 @@ window.onload = async function() {
             fetch(SKULL_ICON_SVG_URL).then(res => res.text()) // Fetch full SVG text for complex skull
         ]);
 
+        window.LoadingScreenManager.updateProgress(40);
+
         // Initialize the parts of the configuration that depend on the loaded assets.
         initializeAssetDependentConfigs({
             shipHullVisual: shipHullVisualData,
@@ -1755,21 +1700,39 @@ window.onload = async function() {
 
         console.log("Assets loaded and config initialized. Initializing world...");
 
-        PlunderGame.initializeWorld();
+        const progressCallback = (p) => window.LoadingScreenManager.updateProgress(p);
+        PlunderGame.initializeWorld(progressCallback);
         // --- FIX: Start the full game loop immediately to animate waves ---
         requestAnimationFrame(PlunderGame.gameLoop);
+
+        // --- SUGGESTION: Add more granular progress updates ---
+        window.LoadingScreenManager.updateProgress(80);
 
         // Draw the initial preview
         drawShipPreview();
         
+        window.LoadingScreenManager.updateProgress(85);
+
         // New: Run the UI initializers that depend on loaded assets.
         initializeAssetDependentUI();
+
+        window.LoadingScreenManager.updateProgress(95);
 
         // New: Update rig options now that all assets are loaded.
         updateRigTypeOptions();
 
+        // --- NEW: Hide Loading Screen ---
+        // Use a small timeout to ensure the browser has a chance to render the final assets
+        // before the loading screen disappears, preventing a "flash" of unstyled content.
+        setTimeout(() => {
+            window.LoadingScreenManager.updateProgress(100);
+            window.LoadingScreenManager.hide();
+        }, 100);
+
     } catch (error) {
         console.error("A critical error occurred during asset loading. Game cannot start.", error);
+        // In case of an error, we might want to hide the loading screen to show the error message.
+        window.LoadingScreenManager.hide();
     }
 
     // --- NEW: Inventory UI Initialization ---

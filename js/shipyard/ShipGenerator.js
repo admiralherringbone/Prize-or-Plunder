@@ -1304,30 +1304,16 @@ class ShipGenerator {
         };
 
         // --- NEW: Add calculated stats to the blueprint ---
-        const tempShip = new CustomShip(0, 0, blueprint, {});
+        // --- REFACTOR: Use ShipStatCalculator to get stats without creating a temp ship instance. ---
+        const stats = ShipStatCalculator.getAllStats(blueprint);
         blueprint.stats = {
-            cruisingSpeed: tempShip.getCrusingSpeed(),
-            acceleration: parseFloat(tempShip.getAcceleration()), // Ensure it's stored as a float
-            turningRadius: tempShip.getTurningRadius(),
-            turningRate: tempShip.getTurningSpeed(),
-            maxHp: tempShip.maxHp, // --- FIX: Use the calculated HP from the ship instance ---
-            rigHp: tempShip.getRigDurability(), // Add rig durability to the blueprint
-            // --- New: Exponentially Diminishing Reload Time Calculation ---
-            reloadTime: (() => {
-                const broadsideCount = tempShip.getBroadsideCount();
-                if (broadsideCount <= 0) {
-                    return 0; // No cannons, no reload time.
-                }
-                if (broadsideCount === 1) {
-                    return 2000; // Base time for one cannon is 2 seconds.
-                }
-                // For n > 1, the formula is 4 - 2^-(n-2) seconds.
-                // This is equivalent to 2 + 1 + 0.5 + 0.25 + ...
-                const totalSeconds = 4 - Math.pow(2, -(broadsideCount - 2));
-
-                // Convert to milliseconds for the game engine.
-                return totalSeconds * 1000;
-            })()
+            cruisingSpeed: stats.cruisingSpeed,
+            acceleration: stats.acceleration,
+            turningRadius: stats.turningRadius,
+            turningRate: stats.turningRate,
+            maxHp: stats.maxHp,
+            rigHp: stats.maxRigHp,
+            reloadTime: stats.reloadTime
         };
 
         console.log("Generated Blueprint:", blueprint);
