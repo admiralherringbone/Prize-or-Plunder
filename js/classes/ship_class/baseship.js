@@ -9,13 +9,13 @@ const SINK_RING_VARIATIONS = [
 
 // --- OPTIMIZATION: Wake Point Pooling & Shared Arrays ---
 const wakePointPool = [];
-function getWakePoint(x, y, vx, vy) {
+function getWakePoint(x, y, vx, vy, width = 1.0) {
     if (wakePointPool.length > 0) {
         const p = wakePointPool.pop();
-        p.x = x; p.y = y; p.vx = vx; p.vy = vy;
+        p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.width = width;
         return p;
     }
-    return { x, y, vx, vy };
+    return { x, y, vx, vy, width };
 }
 function releaseWakePoint(p) {
     wakePointPool.push(p);
@@ -1505,6 +1505,21 @@ class Ship {
 
         const cos = Math.cos(this.angle);
         const sin = Math.sin(this.angle);
+        
+        // --- NEW: Calculate ripple fluctuation based on time for new points ---
+        const time = performance.now(); // Get current time once for both calculations
+        
+        // Sum of sines for organic variation (Performance cost is negligible)
+        const bowRipple = 0.95 + (
+            Math.sin(time * 0.02) + 
+            Math.sin(time * 0.049 + 2.0) * 0.5 + 
+            Math.sin(time * 0.087 + 4.0) * 0.25
+        ) * 0.04;
+
+        const sternRipple = 0.95 + (
+            Math.sin(time * 0.025) + 
+            Math.sin(time * 0.057 + 1.5) * 0.7
+        ) * 0.08;
 
         // Transform to world space and push to history
         for (let i = 0; i < 4; i++) {
@@ -1531,7 +1546,7 @@ class Ship {
                 // --- MODIFIED: Reduced the impact of ship width on wake expansion ---
                 // The multiplier now has a smaller range, making the effect more subtle.
                 const expansionMultiplier = 0.9 + (this.shipWidth / SHIP_TARGET_WIDTH) * 0.1;
-                const expansionSpeed = speed * expansionMultiplier;
+                const expansionSpeed = speed * expansionMultiplier * bowRipple; // Apply bow ripple
                 pVx = Math.cos(outAngle) * expansionSpeed;
                 pVy = Math.sin(outAngle) * expansionSpeed;
             } else if (i === 1) { // Stbd Bow
@@ -1539,7 +1554,17 @@ class Ship {
                 const outAngle = this.angle + Math.PI / 2;
                 // --- MODIFIED: Reduced the impact of ship width on wake expansion ---
                 const expansionMultiplier = 0.9 + (this.shipWidth / SHIP_TARGET_WIDTH) * 0.1;
-                const expansionSpeed = speed * expansionMultiplier;
+                const expansionSpeed = speed * expansionMultiplier * bowRipple; // Apply bow ripple
+                pVx = Math.cos(outAngle) * expansionSpeed;
+                pVy = Math.sin(outAngle) * expansionSpeed;
+            } else if (i === 2) { // Port Stern
+                const outAngle = this.angle - Math.PI / 2;
+                const expansionSpeed = speed * 0.15 * sternRipple; // Added physical expansion to stern
+                pVx = Math.cos(outAngle) * expansionSpeed;
+                pVy = Math.sin(outAngle) * expansionSpeed;
+            } else { // Stbd Stern
+                const outAngle = this.angle + Math.PI / 2;
+                const expansionSpeed = speed * 0.15 * sternRipple;
                 pVx = Math.cos(outAngle) * expansionSpeed;
                 pVy = Math.sin(outAngle) * expansionSpeed;
             }
@@ -1556,24 +1581,28 @@ class Ship {
             }
 
             if (shouldAdd) {
-                trail.unshift(getWakePoint(wx, wy, pVx, pVy));
-                if (trail.length > 20) { // --- OPTIMIZATION: Reduced trail length ---
+                // Store the appropriate ripple as width multiplier for drawing
+                const currentRipple = (i === 0 || i === 1) ? bowRipple : sternRipple;
+                trail.unshift(getWakePoint(wx, wy, pVx, pVy, currentRipple));
+
+                // --- MODIFIED: Use specific length for bow vs stern wakes ---
+                const maxLength = (i === 0 || i === 1) ? BOW_WAKE_TRAIL_LENGTH : WAKE_TRAIL_LENGTH;
+
+                if (trail.length > maxLength) { 
                     const removed = trail.pop();
                     releaseWakePoint(removed);
                 }
             }
             
             // --- NEW: Update positions of existing points (Expansion) ---
-            // Only update bow wakes to curve them
-            if (i === 0 || i === 1) {
-                for (let j = 0; j < trail.length; j++) {
-                    const p = trail[j];
-                    p.x += p.vx;
-                    p.y += p.vy;
-                    // Decay velocity to simulate resistance/drag
-                    p.vx *= 0.9;
-                    p.vy *= 0.9;
-                }
+            // Run for ALL trails so stern also ripples geometrically
+            for (let j = 0; j < trail.length; j++) {
+                const p = trail[j];
+                p.x += p.vx;
+                p.y += p.vy;
+                // Decay velocity to simulate resistance/drag
+                p.vx *= 0.9;
+                p.vy *= 0.9;
             }
         }
     }
@@ -1585,16 +1614,14 @@ class Ship {
     _drawWake(ctx, scale) {
         if (!this.wakeHistory) return;
 
-        const maxWidth = this.shipWidth * 0.2;
         const alpha = 0.5;
-
-        const time = performance.now();
+        ctx.fillStyle = 'white'; // Set color once, control opacity with globalAlpha
+        const originalGlobalAlpha = ctx.globalAlpha;
 
         for (let t = 0; t < 4; t++) {
+            const isBow = (t === 0 || t === 1);
             const trail = this.wakeHistory[t];
             if (trail.length < 2) continue;
-
-            ctx.beginPath();
             
             for (let i = 0; i < trail.length; i++) {
                 const p = trail[i];
@@ -1619,44 +1646,26 @@ class Ship {
                 // Taper width: Newest points (i=0) are widest, oldest are narrowest
                 let ratio = 1 - (i / trail.length);
 
-                // Taper the front of all wakes to avoid a flat edge
-                const headTaper = Math.min(1, i / 5);
-                ratio *= headTaper;
+                // Only apply head taper to stern wakes (2, 3) to keep them from overlapping the hull.
+                // Bow wakes (0, 1) should start at full width to represent spray/churn.
+                if (!isBow) {
+                    const headTaper = Math.min(1, i / 5);
+                    ratio *= headTaper;
+                }
 
-                const currentWidth = maxWidth * ratio;
-
-                // --- NEW: Undulation Effect (Composite Ripple) ---
-                // Use a reduced base amplitude because the composite wave sums up to ~2.8x this value.
-                const baseAmp = maxWidth * 0.25 * ratio; 
-                
-                // Composite wave function (Swell + Main + Chop)
-                // i is the spatial component (index along trail), time is temporal (ms)
-                // --- OPTIMIZATION: Simplified wave math (2 waves instead of 3) ---
-                const y1 = Math.sin(i * 0.3 - time * 0.003) * baseAmp; 
-                const y2 = Math.sin(i * 1.0 - time * 0.010) * (baseAmp * 0.5);         
-                
-                const undulation = y1 + y2;
+                // --- MODIFIED: Increased width factor for bow wakes ---
+                const currentMaxWidth = isBow ? this.shipWidth * 0.15 : this.shipWidth * 0.2;
+                // --- MODIFIED: Use pre-calculated width from the point ---
+                const currentWidth = currentMaxWidth * ratio * (p.width || 1.0);
 
                 // Extrude vertices
-                // Clamp to 0 to prevent wake inversion (crossing over itself)
-                const offsetLeft = Math.max(0, currentWidth * 0.5 + undulation);
-                const offsetRight = Math.max(0, currentWidth * 0.5 + undulation);
+                const offset = currentWidth * 0.5;
 
-                wakeLeftX[i] = p.x + nx * offsetLeft;
-                wakeLeftY[i] = p.y + ny * offsetLeft;
-                wakeRightX[i] = p.x - nx * offsetRight;
-                wakeRightY[i] = p.y - ny * offsetRight;
+                wakeLeftX[i] = p.x + nx * offset;
+                wakeLeftY[i] = p.y + ny * offset;
+                wakeRightX[i] = p.x - nx * offset;
+                wakeRightY[i] = p.y - ny * offset;
             }
-
-            // Draw the ribbon polygon
-            if (trail.length > 0) {
-                ctx.moveTo(wakeLeftX[0], wakeLeftY[0]);
-                // Down the left side
-                for (let i = 1; i < trail.length; i++) ctx.lineTo(wakeLeftX[i], wakeLeftY[i]);
-                // Up the right side
-                for (let i = trail.length - 1; i >= 0; i--) ctx.lineTo(wakeRightX[i], wakeRightY[i]);
-            }
-            ctx.closePath();
 
             // --- OPTIMIZATION: Draw wake as alpha-faded segments to avoid gradient creation ---
             // This prevents creating new gradient objects every frame, reducing garbage collection pressure.
@@ -1664,9 +1673,18 @@ class Ship {
                 const alphaRatio = 1 - (i / (trail.length - 1));
                 const currentAlpha = alpha * alphaRatio;
 
-                if (currentAlpha < 0.01) continue; // Skip drawing invisible segments
+                if (currentAlpha < 0.05) continue; // More aggressive culling for nearly invisible segments
 
-                ctx.fillStyle = `rgba(255, 255, 255, ${currentAlpha})`;
+                ctx.globalAlpha = currentAlpha;
+
+                // --- NEW: Rounded Head for Bow Wakes ---
+                // Draw a circle at the source point to create a rounded leading edge.
+                if (i === 0 && isBow) {
+                    ctx.beginPath();
+                    const radius = Math.hypot(trail[0].x - wakeLeftX[0], trail[0].y - wakeLeftY[0]);
+                    ctx.arc(trail[0].x, trail[0].y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 ctx.beginPath();
                 ctx.moveTo(wakeLeftX[i], wakeLeftY[i]);
@@ -1677,6 +1695,8 @@ class Ship {
                 ctx.fill();
             }
         }
+        
+        ctx.globalAlpha = originalGlobalAlpha; // Restore alpha
     }
 
     /**

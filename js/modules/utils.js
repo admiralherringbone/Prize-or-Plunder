@@ -954,3 +954,15 @@ function getClosestPointOnPolygon(point, polygon) {
     }
     return closestPoint;
 }
+
+/**
+ * New: Explicitly hides the shipyard tooltip.
+ * This function should be called whenever the shipyard screen is hidden
+ * to prevent the tooltip from getting "stuck" on screen.
+ */
+function hideShipyardTooltip() {
+    const tooltip = document.getElementById('shipyard-tooltip');
+    if (tooltip) {
+        tooltip.classList.remove('visible');
+    }
+}

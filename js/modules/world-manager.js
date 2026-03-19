@@ -451,6 +451,10 @@ class WorldManager {
                 window.CanvasManager.releaseCanvas(obstacle.visualCache);
                 obstacle.visualCache = null;
             }
+            if (obstacle.shoreGlowCache) {
+                window.CanvasManager.releaseCanvas(obstacle.shoreGlowCache);
+                obstacle.shoreGlowCache = null;
+            }
         });
     }
 

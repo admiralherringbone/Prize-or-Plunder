@@ -1187,6 +1187,7 @@ class NpcShip extends CustomShip {
 
             // Clear Lookout debug data (it will be repopulated if Lookout runs)
             this.debugLookoutLines = [];
+            this.debugTangentTarget = null; // Clear previous frame's target
 
             // Lookout Trigger: Activate only when in the emergency zone (braking is active) or if stuck.
             // --- FIX: Activate if obstacles are present (Tangent Nav) OR if braking/stuck (Emergency) ---
@@ -2875,7 +2876,8 @@ class NpcShip extends CustomShip {
      * @private
      */
     _calculateTangentTarget(desiredAngle, obstacle, out = null) {
-        if (!obstacle || !obstacle.convexHull || obstacle.convexHull.length < 3) return null;
+        // --- FIX: Allow smaller hulls (rocks/lines) to be processed ---
+        if (!obstacle || !obstacle.convexHull || obstacle.convexHull.length === 0) return null;
 
         // 1. Calculate Centroid (approximate)
         let cx = 0, cy = 0;
@@ -2936,9 +2938,25 @@ class NpcShip extends CustomShip {
         // 5. Pick the Best Side (closest to desired)
         const targetVertex = (Math.abs(diffDesired - maxCwDiff) < Math.abs(diffDesired - maxCcwDiff)) ? cwVertex : ccwVertex;
 
-        const vx = targetVertex.x - cx;
-        const vy = targetVertex.y - cy;
-        const len = Math.sqrt(vx*vx + vy*vy);
+        let vx = targetVertex.x - cx;
+        let vy = targetVertex.y - cy;
+        let len = Math.sqrt(vx*vx + vy*vy);
+
+        // --- FIX: Handle degenerate hulls (points/lines where vertex == centroid) ---
+        if (len < 0.001) {
+            // If the vertex is effectively the centroid (e.g. 1-point hull), project 
+            // perpendicular to the ship-to-obstacle line.
+            const angleToC = Math.atan2(cy - this.y, cx - this.x);
+            
+            // If we are aiming Right (diff > 0), push Right (+PI/2). Else push Left.
+            // This ensures we steer around the point obstacle on the side we are already favoring.
+            const pushDir = (diffDesired >= 0) ? 1 : -1;
+            const pushAngle = angleToC + (pushDir * Math.PI / 2);
+            
+            vx = Math.cos(pushAngle);
+            vy = Math.sin(pushAngle);
+            len = 1.0;
+        }
 
         const result = out || { x: 0, y: 0 };
         result.x = targetVertex.x + (vx / len) * bufferDist;

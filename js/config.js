@@ -61,12 +61,12 @@ const BASE_ROTATION_SCALING_FACTOR = 0.1; // New: Determines pivot speed. Higher
 const MIN_TURNING_SPEED_FOR_RADIUS = 0.7; // Minimum speed for performing in-place pivots.
 const BASELINE_ACCELERATION_STAT = 0.545; // Calculated for a default ship (6 baseSpeed / 11 timeConstant)
 const ACCELERATION_BASE_TIME_SECONDS = 5; // Base time in seconds for acceleration calculation. Lower is faster.
-const DYNAMIC_TURNING_FACTOR = 150; // Lower is faster. Relates speed to turn rate. Unified with default ship.
+const DYNAMIC_TURNING_FACTOR = 80; // Lower is faster. Relates speed to turn rate. Unified with default ship.
 const LATERAL_DAMPING_FACTOR = 0.25; // How much sideways slip is reduced per frame. 0=no damping, 1=instant stop.
 const ACCELERATION_POWER_CURVE_EXPONENT = 1.0; // New: The exponent for the smooth acceleration curve. Higher is more dramatic.
 
 const CRUISING_SPEED_BALANCE_FACTOR = 1.0; // New: Global divisor to balance cruising speed. Set to 1.0 to nullify its effect.
-const CRUISING_SPEED_MULTIPLIER = 100; // New: Global multiplier for final cruising speed.
+const CRUISING_SPEED_MULTIPLIER = 80; // New: Global multiplier for final cruising speed.
 
 const SHIP_LENGTH_TURNING_POWER = 0.5; // How much length affects turning. 0.5 = square root, making the penalty significant but not overly harsh for large ships.
 const REGENERATION_COOLDOWN_TIME = 10000;
@@ -273,6 +273,8 @@ const CANISTER_SHOT_RIG_DAMAGE = 0.1;
 const CANISTER_SHOT_SPREAD_RATE = 0.15;
 
 const NAVY_CANNON_RELOAD_TIME_MS = 2000;
+const WAKE_TRAIL_LENGTH = 20; // Default length of the wake trail (number of points)
+const BOW_WAKE_TRAIL_LENGTH = 15; // Reduced length for bow wakes
 const ROLLING_FIRE_DELAY_MS = 15; // ms between shots in a volley
 const MERCHANT_CANNON_RELOAD_TIME_MS = 4000; // Merchants are twice as slow to reload.
 

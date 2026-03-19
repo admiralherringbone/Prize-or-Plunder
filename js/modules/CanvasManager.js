@@ -45,7 +45,11 @@ const CanvasManager = (function() {
 
         // Clear the canvas to prevent old drawings from appearing.
         const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // --- FIX: Check if context was successfully retrieved before using it ---
+        // This prevents a TypeError if releaseCanvas is called with a canvas that failed context creation (e.g., due to invalid dimensions).
+        if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
 
         if (canvasPool.length < MAX_POOL_SIZE) {
             canvasPool.push(canvas);

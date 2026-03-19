@@ -83,6 +83,48 @@ window.onload = async function() {
         `;
     }
 
+    // --- NEW: Inject Start Screen Info Panels ---
+    // We inject these dynamically to flank the main menu.
+    if (startScreen && !document.getElementById('info-panel-features')) {
+        // 1. Features Panel (Left)
+        const leftPanel = document.createElement('div');
+        leftPanel.id = 'info-panel-features';
+        leftPanel.className = 'info-panel';
+        
+        // --- CONFIGURATION: Set your Feedback Links Here ---
+        const feedbackFormUrl = "https://docs.google.com/forms/d/e/1FAIpQLSfWfpY8xEWmYV7Hoypw6MUApobgPFsgmhW9xcs1RczxbQopcg/viewform?usp=header"; // Replace with your Google Form link
+        const feedbackImageUrl = "assets/images/Combat 1 (HUD)_Plunder_Screenshot_2026-03-18_12-57-34.png"; // Replace with path to your square screenshot
+
+        leftPanel.innerHTML = `
+            <h2>Feedback</h2>
+            <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%;">
+                <a href="${feedbackFormUrl}" target="_blank" title="Open Feedback Form" style="display: block; width: 250px; transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                    <img src="${feedbackImageUrl}" alt="Game Screenshot" style="width: 100%; aspect-ratio: 1/1; object-fit: cover; border: 2px solid #3d352a; border-radius: 2px; box-sizing: border-box; box-shadow: 0 5px 15px rgba(0,0,0,0.3);">
+                </a>
+                <p style="margin-top: 15px; font-size: 0.9rem; font-style: italic; opacity: 0.8; text-align: center;">Click to share your thoughts!</p>
+            </div>
+        `;
+        // Insert before the main menu container
+        startScreen.insertBefore(leftPanel, startScreen.firstElementChild);
+
+        // 2. Updates Panel (Right)
+        const rightPanel = document.createElement('div');
+        rightPanel.id = 'info-panel-updates';
+        rightPanel.className = 'info-panel';
+        rightPanel.innerHTML = `
+            <h2>Updates</h2>
+            <div style="width:100%; text-align:left;">
+                <p><strong>v0.6</strong> - Spyglass & Visuals</p>
+                <p style="font-size:0.9em; opacity:0.8;">- Added functional Spyglass<br>- Enhanced water & wake effects<br>- New ship preview system</p>
+                <br>
+                <p><strong>v0.5</strong> - Inventory System</p>
+                <p style="font-size:0.9em; opacity:0.8;">- Cargo management<br>- Looting & Boarding</p>
+            </div>
+        `;
+        // Append after the main menu container
+        startScreen.appendChild(rightPanel);
+    }
+
     const pennantColorSwatch = document.getElementById('pennant-color-swatch');
     const hullColorTypeSelect = document.getElementById('hull-color-type-select');
     const customHullColorsWrapper = document.getElementById('custom-hull-colors-wrapper');
@@ -425,6 +467,8 @@ window.onload = async function() {
         shipPreviewCanvas.height = rect.height * dpr;
 
         // Set background color
+        if (!shipPreviewCtx) return;
+
         shipPreviewCtx.fillStyle = OCEAN_BLUE;
         shipPreviewCtx.fillRect(0, 0, shipPreviewCanvas.width, shipPreviewCanvas.height);
 
@@ -1640,6 +1684,10 @@ window.onload = async function() {
     hueSliderIndicator.style.top = '0%';
 
     // --- Asset Loading and Initialization ---
+    // --- FIX: Initialize the Inventory UI before the game world ---
+    // This ensures window.openInventoryMenu is defined when BoardingManager is created.
+    initializeInventoryUI();
+
     console.log("Loading assets...");
 
     // --- NEW: Show Loading Screen ---
@@ -1702,9 +1750,6 @@ window.onload = async function() {
 
         const progressCallback = (p) => window.LoadingScreenManager.updateProgress(p);
         PlunderGame.initializeWorld(progressCallback);
-        // --- FIX: Start the full game loop immediately to animate waves ---
-        requestAnimationFrame(PlunderGame.gameLoop);
-
         // --- SUGGESTION: Add more granular progress updates ---
         window.LoadingScreenManager.updateProgress(80);
 
@@ -1727,6 +1772,13 @@ window.onload = async function() {
         setTimeout(() => {
             window.LoadingScreenManager.updateProgress(100);
             window.LoadingScreenManager.hide();
+            
+            // --- NEW: Show Start Screen after loading ---
+            if (startScreen) startScreen.style.display = 'flex';
+
+            // --- FIX: Start the game loop only AFTER all initialization is complete and the loading screen is hidden. ---
+            // This prevents race conditions and ensures the game starts smoothly.
+            requestAnimationFrame(PlunderGame.gameLoop);
         }, 100);
 
     } catch (error) {
@@ -1735,8 +1787,6 @@ window.onload = async function() {
         window.LoadingScreenManager.hide();
     }
 
-    // --- NEW: Inventory UI Initialization ---
-    initializeInventoryUI();
 };
 
 /**
@@ -1751,13 +1801,21 @@ function initializeInventoryUI() {
             position: absolute;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            /* --- NEW: Set initial state for animation --- */
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
             display: none; /* Hidden by default */
             flex-direction: row;
             align-items: center;
             justify-content: center;
             gap: 20px;
             z-index: 2000;
+            /* --- NEW: Define the transition effect --- */
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease-out;
+        }
+        #inventory-screen.visible {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
         }
         .inventory-panel {
             width: 500px;
@@ -3018,7 +3076,7 @@ function initializeInventoryUI() {
         tempCtx.scale(scale, scale);
         tempCtx.rotate(-Math.PI / 2);
         tempCtx.translate(-visualCenterX, -visualCenterY);
-        CustomShip.prototype.drawWorldSpace.call(ship, tempCtx, scale, Math.PI);
+        Ship.prototype.drawWorldSpace.call(ship, tempCtx, scale, Math.PI);
         ship.x = origX; ship.y = origY; ship.angle = origAngle;
         panel.querySelector('.inventory-ship-image').src = tempCanvas.toDataURL();
         window.CanvasManager.releaseCanvas(tempCanvas); // Release canvas back to the pool
@@ -3134,6 +3192,8 @@ function initializeInventoryUI() {
 
     // Exposed Function to Open Menu
     window.openInventoryMenu = (primaryShip, secondaryShip = null) => {
+        console.log(`[Inventory] Opening menu. Primary: ${primaryShip?.displayName || 'None'}. Secondary: ${secondaryShip?.displayName || 'None'}`);
+
         currentPrimaryShip = primaryShip;
         currentSecondaryShip = secondaryShip; // Store secondary
 
@@ -3143,7 +3203,12 @@ function initializeInventoryUI() {
         inventoryRefreshIntervalId = setInterval(window.refreshInventoryUI, INVENTORY_REFRESH_INTERVAL);
         window.inventoryRefreshIntervalId = inventoryRefreshIntervalId; // Expose to game.js for clearing
 
+        // --- NEW: Animation Trigger ---
+        // Set display to flex so it's in the layout, then add the 'visible' class
+        // after a forced reflow to ensure the transition plays.
         screen.style.display = 'flex';
+        void screen.offsetWidth; // Force browser reflow
+        screen.classList.add('visible');
         
         const leftPanel = document.getElementById('inventory-panel-left');
         const rightPanel = document.getElementById('inventory-panel-right');

@@ -12,7 +12,7 @@ class MerchantShip extends NpcShip {
      */
     constructor(x, y, blueprint = null, options = {}) {
         const defaultOptions = {
-            primaryHullColor: 'hsl(145, 63%, 42%)', // Merchant Green
+            primaryHullColor: '#123524', // Merchant Green
             pennantColor: '#05472A',
             reloadTime: MERCHANT_CANNON_RELOAD_TIME_MS
         };

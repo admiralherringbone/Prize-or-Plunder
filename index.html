@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="css/loading-screen.css"> <!-- New: Loading Screen Styles -->
 </head>
 <body>
-    <div id="start-screen">
+    <div id="start-screen" style="display: none;">
         <div class="start-menu-container">
             <div class="title-container">
                 <span class="title-word">Prize</span>
@@ -373,7 +373,7 @@
     <canvas id="gameCanvas"></canvas>
 
     <!-- New: Loading Screen -->
-    <div id="loading-screen" style="display: none;">
+    <div id="loading-screen">
         <div class="loading-title">
             <div class="title-word">Prize</div>
             <div class="title-conjunction">or</div>
@@ -401,6 +401,7 @@
 
     <!-- Load your game scripts in order of dependency -->
     <script src="js/modules/utils.js"></script>       <!-- Utility functions, no dependencies -->
+    <script src="js/InputManager.js"></script> 
     <script src="js/modules/CanvasManager.js"></script> <!-- New: Canvas pooling system -->
     <script src="js/modules/LoadingScreenManager.js"></script> <!-- New: Loading Screen Manager -->
     <script src="js/modules/ShipStatCalculator.js"></script> <!-- New: Ship Stat Calculator -->
@@ -408,9 +409,14 @@
     <script src="js/data/items.js"></script>
     <script src="js/data/npc-roles.js"></script>
     <script src="js/data/ranks.js"></script>
-    <script src="js/modules/ui.js"></script>          <!-- UI drawing functions (depends on config) -->
+    <script src="js/modules/UIManager.js"></script> <!-- New: UI Manager -->
     <script src="js/modules/pathfinder.js"></script>  <!-- A* Pathfinder module -->
     <script src="js/modules/world-manager.js"></script> <!-- New: World streaming system -->
+    <script src="js/modules/BoardingManager.js"></script> <!-- New: Boarding Manager -->
+    <script src="js/modules/EffectManager.js"></script> <!-- New: Effect Manager -->
+    <script src="js/modules/EnvironmentManager.js"></script> <!-- New: Environment Manager -->
+    <script src="js/modules/SpawnManager.js"></script> <!-- New: Spawn Manager -->
+    <script src="js/modules/CollisionManager.js"></script> <!-- NEW: Collision Manager -->
     <script src="js/modules/CargoIconSystem.js"></script>
     <script src="js/classes/obstacles_class/obstacle.js"></script> <!-- Base obstacle class -->
     <script src="js/classes/obstacles_class/rock.js"></script>     <!-- Rock class -->

@@ -184,6 +184,7 @@ class CustomShip extends Ship {
         this.hullDamagePatterns = [];
         this.hullDamageCacheCanvas = null;
         this.lastCachedHullHpPercent = 1.0;
+        this.cacheResolutionScale = 4.0; // --- NEW: High-res cache multiplier ---
 
         // Store colors
         this.primaryHullColor = primaryHullColor;
@@ -1428,7 +1429,10 @@ class CustomShip extends Ship {
         }
 
         if (this.hullCacheCanvas) {
-            ctx.drawImage(this.hullCacheCanvas, this.hullCacheOffset.x, this.hullCacheOffset.y);
+            // --- FIX: Draw the high-res cache scaled down to world units ---
+            const drawW = this.hullCacheCanvas.width / this.cacheResolutionScale;
+            const drawH = this.hullCacheCanvas.height / this.cacheResolutionScale;
+            ctx.drawImage(this.hullCacheCanvas, this.hullCacheOffset.x, this.hullCacheOffset.y, drawW, drawH);
         } else {
             this._drawHull(ctx, this.hullBaseVisualPoints, this.primaryHullColor, zoomLevel);
             this._drawTier1(ctx, zoomLevel);
@@ -1452,7 +1456,10 @@ class CustomShip extends Ship {
         if (this.hp < this.maxHp) {
             this._updateHullDamageCache();
             if (this.hullDamageCacheCanvas) {
-                ctx.drawImage(this.hullDamageCacheCanvas, this.hullCacheOffset.x, this.hullCacheOffset.y);
+                // --- FIX: Draw the high-res damage cache scaled down ---
+                const drawW = this.hullDamageCacheCanvas.width / this.cacheResolutionScale;
+                const drawH = this.hullDamageCacheCanvas.height / this.cacheResolutionScale;
+                ctx.drawImage(this.hullDamageCacheCanvas, this.hullCacheOffset.x, this.hullCacheOffset.y, drawW, drawH);
             }
         }
 
@@ -1520,30 +1527,40 @@ class CustomShip extends Ship {
 
         const margin = 5;
         minX -= margin; minY -= margin; maxX += margin; maxY += margin;
-        const width = maxX - minX; const height = maxY - minY;
+        let width = maxX - minX; let height = maxY - minY;
 
         if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) return;
 
+        // --- NEW: Apply Resolution Multiplier ---
+        this.cacheResolutionScale = 4.0; // 4x resolution for crisp preview
+        
+        // Calculate pixel dimensions based on scale
+        const canvasWidth = Math.max(1, Math.ceil(width * this.cacheResolutionScale));
+        const canvasHeight = Math.max(1, Math.ceil(height * this.cacheResolutionScale));
+
         // 2. Create and prepare the offscreen canvas.
         // --- OPTIMIZATION: Reuse existing canvas if dimensions match ---
-        if (!this.hullCacheCanvas || this.hullCacheCanvas.width !== width || this.hullCacheCanvas.height !== height) {
-            this.hullCacheCanvas = window.CanvasManager.getCanvas(width, height);
-            this.hullCacheCanvas.width = width;
-            this.hullCacheCanvas.height = height;
+        if (!this.hullCacheCanvas || this.hullCacheCanvas.width !== canvasWidth || this.hullCacheCanvas.height !== canvasHeight) {
+            this.hullCacheCanvas = window.CanvasManager.getCanvas(canvasWidth, canvasHeight);
+            this.hullCacheCanvas.width = canvasWidth;
+            this.hullCacheCanvas.height = canvasHeight;
         }
         const offCtx = this.hullCacheCanvas.getContext('2d');
 
         // Defensive check: If context creation fails, return early to prevent TypeError.
         // This can happen if canvas dimensions are excessively large or due to browser issues.
         if (!offCtx) {
-            console.warn(`Failed to get 2D context for ship hull cache. Width: ${width}, Height: ${height}.`, this);
+            console.warn(`Failed to get 2D context for ship hull cache. Width: ${canvasWidth}, Height: ${canvasHeight}.`, this);
             this.hullCacheCanvas = null; // Ensure we don't try to use a failed canvas
             return;
         }
         offCtx.setTransform(1, 0, 0, 1, 0, 0); // Reset transform
-        offCtx.clearRect(0, 0, width, height); // Clear previous content
+        offCtx.clearRect(0, 0, canvasWidth, canvasHeight); // Clear previous content
 
         this.hullCacheOffset = { x: minX, y: minY };
+        
+        // --- NEW: Scale context up by resolution multiplier ---
+        offCtx.scale(this.cacheResolutionScale, this.cacheResolutionScale);
         offCtx.translate(-minX, -minY);
 
         // 3. Perform the one-time draw of all static components onto the offscreen canvas.
@@ -1578,7 +1595,7 @@ class CustomShip extends Ship {
         if (this.blueprint.geometry.sterncastle) this._drawSterncastle(offCtx, this.blueprint.geometry.sterncastle);
         if (this.blueprint.geometry.spardeckSterncastle) this._drawSterncastle(offCtx, this.blueprint.geometry.spardeckSterncastle);
 
-        console.log(`[Cache] Pre-rendered hull for ${this.archetypeName || 'Player Ship'} to a ${width}x${height} canvas.`);
+        console.log(`[Cache] Pre-rendered hull for ${this.archetypeName || 'Player Ship'} to a ${canvasWidth}x${canvasHeight} canvas (Scale: ${this.cacheResolutionScale}x).`);
     }
 
     /**
@@ -1606,6 +1623,8 @@ class CustomShip extends Ship {
         ctx.clearRect(0, 0, this.hullDamageCacheCanvas.width, this.hullDamageCacheCanvas.height);
         
         ctx.save();
+        // --- FIX: Apply cache scale to damage context ---
+        ctx.scale(this.cacheResolutionScale, this.cacheResolutionScale);
         // Apply same offset as hull cache
         ctx.translate(-this.hullCacheOffset.x, -this.hullCacheOffset.y);
 
@@ -1767,6 +1786,12 @@ class CustomShip extends Ship {
      * @private
      */
     _drawBulwarkTopWithGunports(ctx, outerBulwarkPoints, innerBulwarkPoints, tier) {
+        // --- NEW: Add a guard clause for invalid input points ---
+        // This prevents errors when trying to calculate a bounding box for an empty array.
+        if (!outerBulwarkPoints || outerBulwarkPoints.length === 0 || !innerBulwarkPoints || innerBulwarkPoints.length === 0) {
+            return; // Don't attempt to draw if there's no geometry
+        }
+
         // --- FIX: The tier parameter can now be an array of cannons to draw. ---
         const cannonsForTier = typeof tier === 'number'
             ? this.blueprint.layout?.cannonLayouts?.[tier]
@@ -1781,12 +1806,17 @@ class CustomShip extends Ship {
         };
         const width = bbox.maxX - bbox.minX;
         const height = bbox.maxY - bbox.minY;
-
-        if (width <= 0 || height <= 0) return;
+ 
+        // --- MODIFIED: Check for non-finite dimensions as well ---
+        // This prevents getContext('2d') from failing on canvases with Infinity as a dimension.
+        if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) return;
 
         const RESOLUTION_MULTIPLIER = 2; // Increase to 2x resolution for smoother cuts.
 
-        const offscreenCanvas = window.CanvasManager.getCanvas(width * RESOLUTION_MULTIPLIER, height * RESOLUTION_MULTIPLIER);
+        const canvasWidth = Math.max(1, Math.ceil(width * RESOLUTION_MULTIPLIER));
+        const canvasHeight = Math.max(1, Math.ceil(height * RESOLUTION_MULTIPLIER));
+
+        const offscreenCanvas = window.CanvasManager.getCanvas(canvasWidth, canvasHeight);
         const offCtx = offscreenCanvas.getContext('2d');
 
         // Defensive check in case the manager fails (e.g., invalid dimensions)
@@ -2173,7 +2203,10 @@ class CustomShip extends Ship {
     
         const RESOLUTION_MULTIPLIER = 2; // Match the gunport resolution.
     
-        const offscreenCanvas = window.CanvasManager.getCanvas(width * RESOLUTION_MULTIPLIER, height * RESOLUTION_MULTIPLIER);
+        const canvasWidth = Math.max(1, Math.ceil(width * RESOLUTION_MULTIPLIER));
+        const canvasHeight = Math.max(1, Math.ceil(height * RESOLUTION_MULTIPLIER));
+
+        const offscreenCanvas = window.CanvasManager.getCanvas(canvasWidth, canvasHeight);
         const offCtx = offscreenCanvas.getContext('2d');
     
         // Scale the offscreen context to draw at the higher resolution.

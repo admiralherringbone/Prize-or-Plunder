@@ -10,6 +10,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 40px; /* Add spacing between the menu and info panels */
     z-index: 100; /* Ensure it's on top of the canvas */
 }
 
@@ -26,7 +27,9 @@
     flex-direction: column; /* Stack content vertically */
     justify-content: flex-start; /* Align content to the top */
     align-items: center; /* Center the items horizontally */
+    flex-shrink: 0; /* Prevent the main menu from shrinking */
     position: relative; /* Required for positioning pseudo-elements */
+    transform: translateZ(0); /* Fix for filter flickering during child transitions */
 
     /* --- New: Concave Corner Box using SVG Background --- */
     /* This SVG defines the entire box, including the border and concave corners, as a background image. */
@@ -35,6 +38,67 @@
     background-size: 100% 100%;
 }
 
+/* --- Reduced width for Start Menu to fit side panels --- */
+#start-screen .start-menu-container {
+    width: min(500px, 90vw);
+    height: min(550px, 95vh); /* Adjusted height to match aspect ratio */
+    padding: 40px 20px; /* Reduced side padding */
+    box-sizing: border-box; /* Ensure width includes padding */
+    /* Updated SVG background with 500x550 coords and padded viewBox (-5 -5 510 560) */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='-5 -5 510 560' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L475 0 Q475 25 500 25 L500 525 Q475 525 475 550 L25 550 Q25 525 0 525 Z' fill='%23ddc09a' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+}
+
+/* --- New: Info Panels (Features & Updates) --- */
+.info-panel {
+    width: 350px;
+    height: 400px;
+    padding: 30px 20px;
+    box-sizing: border-box;
+    /* Reuse the parchment style, stretched to fit the vertical aspect ratio */
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='-5 -5 360 410' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L325 0 Q325 25 350 25 L350 375 Q325 375 325 400 L25 400 Q25 375 0 375 Z' fill='%23ddc09a' fill-opacity='0.9' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+    filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.5));
+    color: #3d352a;
+    font-family: 'IM Fell English', serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transform: translateZ(0); /* Fix for filter flickering */
+}
+
+.info-panel h2 {
+    font-size: 1.8rem;
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 2px solid #3d352a;
+    width: 100%;
+    padding-bottom: 5px;
+}
+
+.info-panel ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    width: 100%;
+    text-align: left;
+}
+
+.info-panel li {
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+    border-bottom: 1px dashed rgba(61, 53, 42, 0.3);
+    padding-bottom: 5px;
+}
+
+.info-panel p {
+    font-size: 1rem;
+    margin: 5px 0;
+    text-align: left;
+    width: 100%;
+}
+
+
 /* --- Decorative Side Elements (Stars and Lines) --- */
 /* The ::before and ::after pseudo-elements now draw the combined line-and-star object. This applies to both start and shipyard screens. */
 .start-menu-container::before,
@@ -42,10 +106,10 @@
     content: '';
     position: absolute;
     width: 27px; /* Width of the star (25px) + some padding */
-    height: calc(100% - 100px); /* The height of the line */
+    height: 450px; /* The height of the line */
     top: 50px; /* Positioned 50px from the top */
     /* This new SVG contains both the line and the star, ensuring they are always aligned */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 27 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='13.5' y1='0' x2='13.5' y2='400' stroke='%233d352a' stroke-width='2'/%3E%3Cg transform='translate(1, 187.5)'%3E%3Cpath d='M12.5 -1 Q12.5 12.5 25 12.5 Q12.5 12.5 12.5 26 Q12.5 12.5 0 12.5 Q12.5 12.5 12.5 -1 Z' fill='%233d352a'/%3E%3C/g%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 27 450' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='13.5' y1='0' x2='13.5' y2='450' stroke='%233d352a' stroke-width='2'/%3E%3Cg transform='translate(1, 212.5)'%3E%3Cpath d='M12.5 -1 Q12.5 12.5 25 12.5 Q12.5 12.5 12.5 26 Q12.5 12.5 0 12.5 Q12.5 12.5 12.5 -1 Z' fill='%233d352a'/%3E%3C/g%3E%3C/svg%3E");
     background-size: 100% 100%;
     pointer-events: none;
 }
@@ -725,4 +789,12 @@
     color: #3d352a;
     font-family: 'IM Fell English', serif;
     padding: 5px;
+}
+
+/* --- Responsive: Hide Info Panels on smaller screens --- */
+@media (max-width: 1100px) {
+    .info-panel {
+        display: none !important;
+    }
+}
 }
