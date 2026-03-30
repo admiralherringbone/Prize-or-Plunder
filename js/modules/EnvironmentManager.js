@@ -48,19 +48,19 @@ class EnvironmentManager {
         const cycleProgress = this.dayNightTimer / DAY_NIGHT_CYCLE_DURATION;
 
         // 0.0 - 0.45: Day (1.0)
-        // 0.45 - 0.55: Sunset (1.0 -> 0.2)
-        // 0.55 - 0.95: Night (0.2)
-        // 0.95 - 1.00: Sunrise (0.2 -> 1.0)
+        // 0.45 - 0.55: Sunset (1.0 -> 0.1)
+        // 0.55 - 0.95: Night (0.1)
+        // 0.95 - 1.00: Sunrise (0.1 -> 1.0)
         if (cycleProgress < 0.45) {
             this.ambientLightLevel = 1.0;
         } else if (cycleProgress < 0.55) {
             const t = (cycleProgress - 0.45) / 0.10;
-            this.ambientLightLevel = 1.0 - (t * 0.8);
+            this.ambientLightLevel = 1.0 - (t * 0.9);
         } else if (cycleProgress < 0.95) {
-            this.ambientLightLevel = 0.2;
+            this.ambientLightLevel = 0.1;
         } else {
             const t = (cycleProgress - 0.95) / 0.05;
-            this.ambientLightLevel = 0.2 + (t * 0.8);
+            this.ambientLightLevel = 0.1 + (t * 0.9);
         }
     }
 
@@ -94,7 +94,8 @@ class EnvironmentManager {
             }
 
             const flicker = 0.95 + Math.random() * 0.1;
-            const radius = (ship.shipLength) * flicker;
+            // --- MODIFIED: Use SHIP_LIGHT_RADIUS as a multiplier of ship length ---
+            const radius = ship.shipLength * (typeof SHIP_LIGHT_RADIUS !== 'undefined' ? SHIP_LIGHT_RADIUS : 1.0) * flicker;
             const screenRadius = radius * effectiveScale;
 
             const lightObj = this._getLightDataObject();
@@ -216,8 +217,13 @@ class EnvironmentManager {
             const ctx = c.getContext('2d');
             const cx = size / 2, cy = size / 2, r = size / 2;
             const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+            
+            // --- MODIFIED: Use SHIP_LIGHT_SOFTNESS for adjustable falloff ---
+            const softness = (typeof SHIP_LIGHT_SOFTNESS !== 'undefined') ? SHIP_LIGHT_SOFTNESS : 0.5;
+
             g.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            g.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+            // Using a lower stop (e.g. 0.25) makes the fade out much longer and softer.
+            g.addColorStop(softness, 'rgba(255, 255, 255, 0.5)');
             g.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = g;
             ctx.fillRect(0, 0, size, size);
@@ -234,8 +240,11 @@ class EnvironmentManager {
             const ctx = c.getContext('2d');
             const cx = size / 2, cy = size / 2, r = size / 2;
             const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+            
+            const softness = (typeof SHIP_LIGHT_SOFTNESS !== 'undefined') ? SHIP_LIGHT_SOFTNESS : 0.5;
+
             g.addColorStop(0, 'rgba(255, 170, 0, 1)');
-            g.addColorStop(0.5, 'rgba(255, 170, 0, 0.5)');
+            g.addColorStop(softness, 'rgba(255, 170, 0, 0.5)');
             g.addColorStop(1, 'rgba(255, 170, 0, 0)');
             ctx.fillStyle = g;
             ctx.fillRect(0, 0, size, size);

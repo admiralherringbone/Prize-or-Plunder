@@ -8,6 +8,7 @@ const LoadingScreenManager = (function() {
     let spinnerCanvas = null;
     let spinnerCtx = null;
     let progressBarFillEl = null;
+    let statusTextEl = null; // New
 
     // Animation State
     let animationFrameId = null;
@@ -33,6 +34,7 @@ const LoadingScreenManager = (function() {
     function _init() {
         spinnerCanvas = document.getElementById('loading-spinner-canvas');
         progressBarFillEl = document.getElementById('loading-bar-fill');
+        statusTextEl = document.getElementById('loading-status-text');
 
         if (!spinnerCanvas || !progressBarFillEl) {
             console.error("Loading screen child elements not found. Loading screen will not function.");
@@ -175,7 +177,15 @@ const LoadingScreenManager = (function() {
         progressBarFillEl.style.width = `${clampedPercentage}%`;
     }
 
-    return { show, hide, updateProgress };
+    /**
+     * Updates the loading status text.
+     * @param {string} text - The text to display.
+     */
+    function updateStatus(text) {
+        if (statusTextEl && text) statusTextEl.textContent = text;
+    }
+
+    return { show, hide, updateProgress, updateStatus };
 })();
 
 window.LoadingScreenManager = LoadingScreenManager;

@@ -10,96 +10,42 @@ class Island extends Obstacle {
 
         // Island-specific properties for the grass layer
         this.grassVisualColor = ISLAND_GRASS_COLOR;
-        this.grassVisualPoints = this._generateGrassLayer();
+        
+        // --- NEW: Generate layers using Contour Insetting instead of Scaling ---
+        // Calculate dynamic offsets based on island size. 
+        // We use the min radius as a baseline to prevent over-shrinking on thin islands.
+        const sizeReference = Math.min(baseRadiusX, baseRadiusY);
+        const drySandOffset = sizeReference * 0.05; // 5% inward
+        const grassOffset = sizeReference * 0.1;    // 10% inward
+
+        // Note: Clipper uses positive for expansion, negative for shrinking.
+        this.drySandVisualPoints = this._generateOffsetPolygon(this.originalIrregularPoints, -drySandOffset);
+        this.grassVisualPoints = this._generateOffsetPolygon(this.originalIrregularPoints, -grassOffset);
+
+        // --- NEW: Triangulate inner layers for WebGL ---
+        const flatten = (pts) => {
+            const f = new Float32Array(pts.length * 2);
+            pts.forEach((p, i) => { f[i*2] = p.x; f[i*2+1] = p.y; });
+            return f;
+        };
+        if (this.drySandVisualPoints.length > 2) this.drySandIndices = earcut(flatten(this.drySandVisualPoints));
+        if (this.grassVisualPoints.length > 2) this.grassIndices = earcut(flatten(this.grassVisualPoints));
 
         // --- NEW: Cache the visuals immediately ---
         this.cacheVisuals();
     }
 
     /**
-     * Generates the points for the inner grass layer by scaling down the main island shape.
-     * @private
-     * @returns {Array<object>} An array of point objects {x, y} for the grass layer.
-     */
-    _generateGrassLayer() {
-        const grassPoints = [];
-        const scaleFactor = 0.8;
-
-        // We need the center of the island's bounding box to scale towards
-        const bboxCenterX = this.minX + (this.maxX - this.minX) / 2;
-        const bboxCenterY = this.minY + (this.maxY - this.minY) / 2;
-
-        this.originalIrregularPoints.forEach(p => {
-            const translatedX = p.x - bboxCenterX;
-            const translatedY = p.y - bboxCenterY;
-            const scaledX = translatedX * scaleFactor;
-            const scaledY = translatedY * scaleFactor;
-            grassPoints.push({
-                x: scaledX + bboxCenterX,
-                y: scaledY + bboxCenterY
-            });
-        });
-
-        ensureClockwiseWinding(grassPoints);
-        return grassPoints;
-    }
-
-    /**
      * Renders the static layers (Sand, Grass) to the cache context.
      */
     renderStaticVisuals(ctx) {
-        // Calculate center for scaling (same logic as _generateGrassLayer)
-        const bboxCenterX = this.minX + (this.maxX - this.minX) / 2;
-        const bboxCenterY = this.minY + (this.maxY - this.minY) / 2;
-
-        // 1. Draw Wet Sand (Base Layer - 1.0x - Collision Boundary)
-        ctx.fillStyle = this.strokeColor; // Darker sand color
-        ctx.beginPath();
-        this.outerPerimeterPoints.forEach((point, index) => {
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
-        });
-        ctx.closePath();
-        ctx.fill();
-
-        // 2. Draw Dry Sand (Middle Layer - ~0.9x)
-        ctx.save();
-        ctx.translate(bboxCenterX, bboxCenterY);
-        ctx.scale(0.9, 0.9); 
-        ctx.translate(-bboxCenterX, -bboxCenterY);
-        
-        ctx.fillStyle = this.color; // Standard sand color
-        ctx.beginPath();
-        this.outerPerimeterPoints.forEach((point, index) => {
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
-        });
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-
-        // 3. Draw Grass (Inner Layer - Pre-calculated at 0.8x)
-        ctx.save();
-        ctx.beginPath();
-        this.grassVisualPoints.forEach((point, index) => {
-            if (index === 0) ctx.moveTo(point.x, point.y);
-            else ctx.lineTo(point.x, point.y);
-        });
-        ctx.closePath();
-        ctx.fillStyle = this.grassVisualColor;
-        ctx.fill();
-        ctx.strokeStyle = (typeof darkenColor === 'function') ? darkenColor(this.grassVisualColor, 10) : this.grassVisualColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.restore();
+        // --- MODIFIED: Entire Island moved to WebGL pass in ShorelineGLRenderer ---
+        // We no longer draw the static landmass in 2D. This prevents the 2D layer
+        // from occluding the WebGL waves and significantly improves CPU performance.
     }
 
-    drawWorldSpace(ctx, worldToScreenScale, windDirection, shorelineRenderer = null, time = 0, viewport = null) {
-        super.drawWorldSpace(ctx, worldToScreenScale, windDirection);
-
-        // 4. Draw Wave Break (Over Island, Clipped to Wet Sand)
-        if (shorelineRenderer) {
-            shorelineRenderer.renderIsland(ctx, this, time, viewport, worldToScreenScale);
-        }
+    drawWorldSpace(ctx, worldToScreenScale, windDirection, viewport = null) {
+        // Pass viewport to parent for chunk culling
+        super.drawWorldSpace(ctx, worldToScreenScale, windDirection, viewport);
     }
 }

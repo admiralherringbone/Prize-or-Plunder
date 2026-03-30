@@ -9,6 +9,7 @@ const DEBUG = {
     DRAW_CONVEX_HULLS: true, // Draw the simplified convex hull used for optimized collision checks.
     DRAW_GUNPORT_CUTOUTS: false, // To visualize the gunport cutting shapes.
     DRAW_VMG_DATA: false, // Visualize VMG search vectors for NPC ships.
+    ENABLE_OCEAN_SHIMMER: false, // New: Toggle for the WebGL procedural ocean waves
     LOG_THROTTLE_MS: 250 // Log AI status 4 times per second to avoid console flooding.
 };
 
@@ -19,6 +20,7 @@ const WORLD_BUFFER = 5000; // The soft border zone
 const WORLD_WIDTH = PLAYABLE_WIDTH + (WORLD_BUFFER * 2);
 const WORLD_HEIGHT = PLAYABLE_HEIGHT + (WORLD_BUFFER * 2);
 const GRID_SIZE = 100;
+const SPATIAL_GRID_CELL_SIZE = 1000; // Optimization: Larger buckets for physics to handle giant islands
 
 // --- Base Ship Dimensions (Primary driving constants for other values) ---
 const SHIP_TARGET_LENGTH = GRID_SIZE / 2;
@@ -28,23 +30,22 @@ const SHIP_SHOULDER_LOCAL_X_OFFSET = SHIP_TARGET_LENGTH * 0.4; // For local avoi
 const SHIP_SHOULDER_LOCAL_Y_OFFSET = SHIP_TARGET_WIDTH * 0.5;  // For local avoidance whiskers
 
 // --- Entity Counts ---
-const ISLAND_DENSITY = 2; // Number of islands per 10,000x10,000 area
-const ROCK_DENSITY = 4;   // Number of rocks per 10,000x10,000 area
+const ISLAND_DENSITY = 0.6; // Restored to previous density
+const ROCK_DENSITY = 2.5;   // Increased for more cluttered high seas
 const NAVY_SHIP_DENSITY = 0.13; // Number of navy ships per 10,000x10,000 area
 const MERCHANT_SHIP_DENSITY = 0.67; // Number of merchant ships per 10,000x10,000 area
-const SHOAL_DENSITY = 2;  // Number of shoals per 10,000x10,000 area
-const CORAL_REEF_DENSITY = 0.6; // Number of coral reefs per 10,000x10,000 area
+const SHOAL_DENSITY = 1.2;  // Increased density for more navigational hazards
+const CORAL_REEF_DENSITY = 0.6; // Increased density
 
 // --- World Generation Constants ---
-const ISLAND_SMALL_CHANCE = 0.75;
-const ISLAND_SMALL_MIN_RADIUS = 70;
-const ISLAND_SMALL_MAX_RADIUS = 400;
-const ISLAND_LARGE_MIN_RADIUS = 800;
-const ISLAND_LARGE_MAX_RADIUS = 1600;
+const ISLAND_GLOBAL_MIN_RADIUS = 400;
+const ISLAND_GLOBAL_MAX_RADIUS = 6400;
+const ISLAND_SMALL_THRESHOLD = 1200; // Islands below this radius are considered "Small" (Simple shapes)
+
 const ROCK_MIN_RADIUS = 20;
-const ROCK_MAX_RADIUS = 50;
-const SHOAL_REEF_MIN_RADIUS = 140;
-const SHOAL_REEF_MAX_RADIUS = 300;
+const ROCK_MAX_RADIUS = 100;
+const SHOAL_REEF_MIN_RADIUS = 150; // Smaller minimum for variety
+const SHOAL_REEF_MAX_RADIUS = 800; // Doubled max radius for large banks
 
 // --- Shipyard Generator Constants ---
 const CANNON_UNIT_SIZE = GRID_SIZE / 10; // Base length required for one cannon.
@@ -174,8 +175,9 @@ const CORAL_REEF_DAMAGE_PER_SECOND = 2.0; // Total damage per second while movin
 const CORAL_REEF_DAMAGE_THRESHOLD_SPEED = 0.005; // Lowered to be less than wind drift speed.
 const CORAL_REEF_SLOW_FACTOR = 0.001; // Factor to slow down ships moving over coral reefs.
 const HAZARD_EASING_FACTOR = 0.3; // How quickly speed interpolates to the slow factor. Higher is faster.
+const CORAL_DENSITY_BASE_RADIUS = SHOAL_REEF_MIN_RADIUS; // Reference size for quantity scaling
 const CORAL_SHAPE_MIN_DIAMETER = GRID_SIZE / 4;
-const CORAL_SHAPE_MAX_DIAMETER = GRID_SIZE;
+const CORAL_SHAPE_MAX_DIAMETER = GRID_SIZE * 2;
 
 // --- Wind Constants ---
 const WIND_CHANGE_INTERVAL = 4 * 60 * 1000; // 4 minutes
@@ -184,6 +186,8 @@ const WIND_CHANGE_INTERVAL = 4 * 60 * 1000; // 4 minutes
 const DAY_NIGHT_CYCLE_DURATION = 600000; // 10 minutes in ms
 const NIGHT_AMBIENT_COLOR = '#000015'; // Deep midnight blue
 const LIGHT_COLOR = '#ffaa00'; // Warm yellow-orange
+const SHIP_LIGHT_RADIUS = 1.0; // Multiplier of ship length for the light throw (1.0 = 1:1 ratio)
+const SHIP_LIGHT_SOFTNESS = 0.1; // ratio of the radius that is fully bright (0..1)
 
 // --- Color Palette ---
 const OCEAN_BLUE = '#3498db';
@@ -415,7 +419,14 @@ function initializeAssetDependentConfigs(loadedSvgData) {
     // Parse the complex skull icon (multiple paths with transforms)
     const parser = new DOMParser();
     const doc = parser.parseFromString(loadedSvgData.skullIcon, "image/svg+xml");
-    SKULL_ICON_COMPLEX_DATA = [];
+    
+    // --- FIX: Check for Parser Errors ---
+    const parserError = doc.querySelector("parsererror");
+    if (parserError) {
+        console.warn("Failed to parse Skull Icon SVG:", parserError.textContent);
+        SKULL_ICON_COMPLEX_DATA = []; // Fallback to empty to prevent crash
+    } else {
+        SKULL_ICON_COMPLEX_DATA = [];
     
     function traverse(node, currentMatrix) {
         let nextMatrix = [...currentMatrix];
@@ -453,6 +464,7 @@ function initializeAssetDependentConfigs(loadedSvgData) {
     // Start traversal with identity matrix
     if (doc.documentElement) {
         traverse(doc.documentElement, [1, 0, 0, 1, 0, 0]);
+    }
     }
 
     // --- NEW: Generate Skull Icon Cache ---

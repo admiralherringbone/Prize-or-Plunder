@@ -58,7 +58,12 @@ class CollisionManager {
                     if (obj instanceof Ship && (other.type === 'island' || other.type === 'rock')) {
                         if (other.convexHull && !checkPolygonCollision(objPoints, other.convexHull)) continue;
                         
-                        for (const part of other.convexParts) {
+                        // --- OPTIMIZATION: Local Grid Pruning ---
+                        const partsToCheck = (other.getRelevantConvexParts) 
+                            ? other.getRelevantConvexParts(objAABB) 
+                            : other.convexParts;
+
+                        for (const part of partsToCheck) {
                             if (!part.aabb) part.aabb = getPolygonAABB(part);
                             if (!checkAABBOverlap(objAABB, part.aabb)) continue;
                             

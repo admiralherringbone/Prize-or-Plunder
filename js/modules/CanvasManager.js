@@ -4,7 +4,7 @@
  */
 const CanvasManager = (function() {
     const canvasPool = [];
-    const MAX_POOL_SIZE = 100; // Prevent the pool from growing indefinitely.
+    const MAX_POOL_SIZE = 1000; // Increased to handle giant island chunks (1 island ~= 170 chunks)
 
     // For debugging and tracking
     let createdCount = 0;

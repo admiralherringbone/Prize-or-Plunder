@@ -8,11 +8,7 @@
  */
 async function fetchSvgPathData(url) {
     try {
-        const response = await fetch(url);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status} for url: ${url}`);
-        }
-        const svgText = await response.text();
+        const svgText = await fetchTextContent(url); // --- FIX: Use helper ---
         // Use the browser's built-in DOMParser to safely parse the SVG text
         const parser = new DOMParser();
         const doc = parser.parseFromString(svgText, "image/svg+xml");
@@ -29,10 +25,39 @@ async function fetchSvgPathData(url) {
 }
 
 /**
+ * --- NEW: Helper to fetch text content from URL or Data URI ---
+ * Eliminates network overhead for Data URIs and handles HTTP errors for files.
+ */
+async function fetchTextContent(url) {
+    if (url.startsWith('data:')) {
+        const commaIdx = url.indexOf(',');
+        if (commaIdx > -1) {
+            return decodeURIComponent(url.substring(commaIdx + 1));
+        }
+        return url;
+    }
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status} for url: ${url}`);
+    }
+    return response.text();
+}
+
+/**
  * Main initialization function that runs when the page loads.
  * It orchestrates asset loading before starting the game.
  */
 window.onload = async function() {
+    // --- NEW: Initialize WebGL Layer ---
+    const webglCanvas = document.getElementById('webglCanvas');
+    if (webglCanvas) {
+        window.webglManager = new WebGLManager(webglCanvas);
+        window.webglManager.resize();
+        
+        // Ensure WebGL resizes along with the 2D canvas
+        window.addEventListener('resize', () => window.webglManager.resize());
+    }
+
     // --- PERFORMANCE OPTIMIZATION: Memoize SVG Path Parsing ---
     // The parseAndFlattenSvgPath function is called many times per frame with the same
     // arguments to draw sails. This creates a cache to store the results of this
@@ -463,6 +488,10 @@ window.onload = async function() {
         // resulting in a much sharper image, similar to SVG.
         const dpr = window.devicePixelRatio || 1;
         const rect = shipPreviewCanvas.getBoundingClientRect();
+        
+        // --- FIX: Prevent infinite loop on hidden/zero-size canvas ---
+        if (rect.width === 0 || rect.height === 0) return;
+        
         shipPreviewCanvas.width = rect.width * dpr;
         shipPreviewCanvas.height = rect.height * dpr;
 
@@ -1693,6 +1722,7 @@ window.onload = async function() {
     // --- NEW: Show Loading Screen ---
     window.LoadingScreenManager.show(true); // Show with progress bar
     window.LoadingScreenManager.updateProgress(5);
+    window.LoadingScreenManager.updateStatus("Loading Assets...");
 
     try {
         // Use Promise.all to fetch all SVG assets concurrently for performance.
@@ -1723,11 +1753,12 @@ window.onload = async function() {
             fetchSvgPathData(ANCHOR_ICON_SVG_URL),
             fetchSvgPathData(NAVIGATION_ICON_SVG_URL),
             fetchSvgPathData(NAVIGATION_ICON_DIAGONAL_SVG_URL),
-            fetch(CANNON_SVG_URL).then(res => res.text()), // Fetch the full SVG text for the complex parser
-            fetch(SKULL_ICON_SVG_URL).then(res => res.text()) // Fetch full SVG text for complex skull
+            fetchTextContent(CANNON_SVG_URL), // --- FIX: Use helper ---
+            fetchTextContent(SKULL_ICON_SVG_URL) // --- FIX: Use helper ---
         ]);
 
         window.LoadingScreenManager.updateProgress(40);
+        window.LoadingScreenManager.updateStatus("Configuring Game...");
 
         // Initialize the parts of the configuration that depend on the loaded assets.
         initializeAssetDependentConfigs({
@@ -1746,12 +1777,18 @@ window.onload = async function() {
             skullIcon: skullIconData // New
         });
 
-        console.log("Assets loaded and config initialized. Initializing world...");
+        console.log("Assets loaded. Calling PlunderGame.initializeWorld...");
 
-        const progressCallback = (p) => window.LoadingScreenManager.updateProgress(p);
-        PlunderGame.initializeWorld(progressCallback);
+        const progressCallback = (p, text) => {
+            window.LoadingScreenManager.updateProgress(p);
+            if (text) window.LoadingScreenManager.updateStatus(text);
+        };
+        
+        // --- FIX: Await the async world generation ---
+        await PlunderGame.initializeWorld(progressCallback);
         // --- SUGGESTION: Add more granular progress updates ---
         window.LoadingScreenManager.updateProgress(80);
+        window.LoadingScreenManager.updateStatus("Generating Ship Preview...");
 
         // Draw the initial preview
         drawShipPreview();
@@ -1762,6 +1799,7 @@ window.onload = async function() {
         initializeAssetDependentUI();
 
         window.LoadingScreenManager.updateProgress(95);
+        window.LoadingScreenManager.updateStatus("Finalizing...");
 
         // New: Update rig options now that all assets are loaded.
         updateRigTypeOptions();
@@ -1770,21 +1808,36 @@ window.onload = async function() {
         // Use a small timeout to ensure the browser has a chance to render the final assets
         // before the loading screen disappears, preventing a "flash" of unstyled content.
         setTimeout(() => {
-            window.LoadingScreenManager.updateProgress(100);
-            window.LoadingScreenManager.hide();
-            
-            // --- NEW: Show Start Screen after loading ---
-            if (startScreen) startScreen.style.display = 'flex';
+            try {
+                window.LoadingScreenManager.updateProgress(100);
+                window.LoadingScreenManager.updateStatus("Ready!");
+                window.LoadingScreenManager.hide();
+                
+                // --- NEW: Show Start Screen after loading ---
+                if (startScreen) startScreen.style.display = 'flex';
 
-            // --- FIX: Start the game loop only AFTER all initialization is complete and the loading screen is hidden. ---
-            // This prevents race conditions and ensures the game starts smoothly.
-            requestAnimationFrame(PlunderGame.gameLoop);
+                // --- FIX: Start the game loop only AFTER all initialization is complete and the loading screen is hidden. ---
+                // This prevents race conditions and ensures the game starts smoothly.
+                console.log("Starting Game Loop...");
+                requestAnimationFrame(PlunderGame.gameLoop);
+            } catch (loopError) {
+                console.error("Game crashed during startup:", loopError);
+                alert("Game crashed during startup:\n" + loopError.message);
+            }
         }, 100);
 
     } catch (error) {
         console.error("A critical error occurred during asset loading. Game cannot start.", error);
-        // In case of an error, we might want to hide the loading screen to show the error message.
+        
+        // --- FIX: Error Handling to prevent getting stuck ---
+        // Ensure the loading screen is hidden so the user sees the alert/error state
         window.LoadingScreenManager.hide();
+        
+        // Show a user-friendly error message
+        alert("Failed to load game assets.\n" + error.message + "\nCheck the console for details.");
+        
+        // Attempt to show the start screen anyway to allow a retry or at least not show a broken page
+        if (startScreen) startScreen.style.display = 'flex';
     }
 
 };
@@ -1821,7 +1874,7 @@ function initializeInventoryUI() {
             width: 500px;
             height: 550px;
             /* Parchment Background (Matches Start Screen) */
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 500 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L475 0 Q475 25 500 25 L500 475 Q475 475 475 500 L25 500 Q25 475 0 475 Z' fill='%23ddc09a' fill-opacity='0.75' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20viewBox='0%200%20500%20500'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L475%200%20Q475%2025%20500%2025%20L500%20475%20Q475%20475%20475%20500%20L25%20500%20Q25%20475%200%20475%20Z'%20fill='%23ddc09a'%20fill-opacity='0.75'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
             background-size: 100% 100%;
             padding: 40px; /* Padding to avoid concave corners */
             box-sizing: border-box;
@@ -1948,7 +2001,7 @@ function initializeInventoryUI() {
             width: 400px;
             height: 250px;
             /* Scaled down version of the inventory panel background with concave corners */
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L375 0 Q375 25 400 25 L400 225 Q375 225 375 250 L25 250 Q25 225 0 225 Z' fill='%23ddc09a' fill-opacity='0.95' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20viewBox='0%200%20400%20250'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L375%200%20Q375%2025%20400%2025%20L400%20225%20Q375%20225%20375%20250%20L25%20250%20Q25%20225%200%20225%20Z'%20fill='%23ddc09a'%20fill-opacity='0.95'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
             background-size: 100% 100%;
             display: none;
             flex-direction: column;
@@ -2013,7 +2066,7 @@ function initializeInventoryUI() {
             transform: translate(-50%, -50%);
             width: 400px;
             height: 250px;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L375 0 Q375 25 400 25 L400 225 Q375 225 375 250 L25 250 Q25 225 0 225 Z' fill='%23ddc09a' fill-opacity='0.95' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20viewBox='0%200%20400%20250'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L375%200%20Q375%2025%20400%2025%20L400%20225%20Q375%20225%20375%20250%20L25%20250%20Q25%20225%200%20225%20Z'%20fill='%23ddc09a'%20fill-opacity='0.95'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
             background-size: 100% 100%;
             display: none;
             flex-direction: column;
@@ -2132,7 +2185,7 @@ function initializeInventoryUI() {
             transform: translate(-50%, -50%);
             width: 450px;
             height: 300px;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 450 300' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L425 0 Q425 25 450 25 L450 275 Q425 275 425 300 L25 300 Q25 275 0 275 Z' fill='%23ddc09a' fill-opacity='0.98' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+            background-image: url("data:image/svg+xml,%3Csvg%20viewBox='0%200%20450%20300'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L425%200%20Q425%2025%20450%2025%20L450%20275%20Q425%20275%20425%20300%20L25%20300%20Q25%20275%200%20275%20Z'%20fill='%23ddc09a'%20fill-opacity='0.98'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
             background-size: 100% 100%;
             display: none;
             flex-direction: column;

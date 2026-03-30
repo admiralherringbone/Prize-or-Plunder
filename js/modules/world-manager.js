@@ -48,6 +48,15 @@ class WorldManager {
         // --- NEW: Sector Update Optimization ---
         this.lastPlayerSectorX = -1;
         this.lastPlayerSectorY = -1;
+        this.lastActivationRadius = -1; // --- NEW: Track radius changes to prevent "Activation Storms" ---
+        this.retrievalFrameId = 0; // --- NEW: For deduplication of multi-sector objects ---
+
+        // --- NEW: Map Data Caching ---
+        this.cachedNpcMapData = [];
+        this.mapDataUpdateTimer = 0;
+        this.mapDataPool = []; // --- OPTIMIZATION: Object pool for map data to reduce GC ---
+        this.allStaticObjectsCache = null; // --- OPTIMIZATION: Cache for static object list ---
+        this.MAP_DATA_UPDATE_INTERVAL = 250; // Update map data 4 times per second
     }
 
     /**
@@ -92,9 +101,21 @@ class WorldManager {
      * @param {Obstacle} object - The static object to add.
      */
     addStaticObject(object) {
-        // For large objects, they might span multiple sectors. For now, we'll add them to their origin sector.
-        const key = this._getSectorKey(object);
-        this.sectors.get(key)?.static.push(object);
+        // --- FIX: Multi-Sector Registration ---
+        // Register large objects in every sector they overlap.
+        // This allows us to reduce the activation radius significantly in game.js.
+        const startX = Math.max(0, Math.floor((object.minX ?? object.x) / this.sectorSize));
+        const endX = Math.min(this.numSectorsX - 1, Math.floor((object.maxX ?? object.x) / this.sectorSize));
+        const startY = Math.max(0, Math.floor((object.minY ?? object.y) / this.sectorSize));
+        const endY = Math.min(this.numSectorsY - 1, Math.floor((object.maxY ?? object.y) / this.sectorSize));
+
+        for (let x = startX; x <= endX; x++) {
+            for (let y = startY; y <= endY; y++) {
+                const key = this.sectorKeys[x][y];
+                this.sectors.get(key)?.static.push(object);
+            }
+        }
+        this.staticCacheDirty = true; // --- OPTIMIZATION: Flag for batch invalidation ---
     }
 
     /**
@@ -181,8 +202,9 @@ class WorldManager {
         const playerSectorX = Math.floor(player.x / this.sectorSize);
         const playerSectorY = Math.floor(player.y / this.sectorSize);
 
-        // --- OPTIMIZATION: Only update active sectors if player has moved to a new sector ---
-        if (playerSectorX !== this.lastPlayerSectorX || playerSectorY !== this.lastPlayerSectorY) {
+        // --- FIX: Trigger refresh if player moved OR if the activation radius changed (due to zoom) ---
+        if (playerSectorX !== this.lastPlayerSectorX || playerSectorY !== this.lastPlayerSectorY || this.activationRadius !== this.lastActivationRadius) {
+            this.lastActivationRadius = this.activationRadius;
             this.lastPlayerSectorX = playerSectorX;
             this.lastPlayerSectorY = playerSectorY;
 
@@ -230,6 +252,13 @@ class WorldManager {
 
         // Run the simplified simulation for all dormant sectors
         this._updateDormantSectors(deltaTime, windDirection, pathfinder);
+
+        // --- NEW: Update Map Data Cache Periodically ---
+        this.mapDataUpdateTimer += deltaTime;
+        if (this.mapDataUpdateTimer > this.MAP_DATA_UPDATE_INTERVAL) {
+            this._updateNpcMapDataCache();
+            this.mapDataUpdateTimer = 0;
+        }
     }
 
     /**
@@ -311,6 +340,8 @@ class WorldManager {
      * @returns {{statics: Array, dynamics: Array}}
      */
     getActiveObjects() {
+        this.retrievalFrameId++; // --- NEW: Increment ID for this frame ---
+
         // Clear cached arrays without allocating new ones
         this.cachedActiveStatics.length = 0;
         this.cachedActiveDynamics.length = 0;
@@ -324,11 +355,16 @@ class WorldManager {
             if (sector) {
                 for (let i = 0; i < sector.static.length; i++) {
                     const obj = sector.static[i];
-                    this.cachedActiveStatics.push(obj);
-                    if (obj.type === 'island') this.cachedActiveIslands.push(obj);
-                    else if (obj.type === 'rock') this.cachedActiveRocks.push(obj);
-                    else if (obj.type === 'shoal') this.cachedActiveShoals.push(obj);
-                    else if (obj.type === 'coralReef') this.cachedActiveCoralReefs.push(obj);
+                    // --- FIX: Deduplication ---
+                    // Since objects now exist in multiple sectors, ensure we only add them once per frame.
+                    if (obj.lastRetrievalId !== this.retrievalFrameId) {
+                        obj.lastRetrievalId = this.retrievalFrameId;
+                        this.cachedActiveStatics.push(obj);
+                        if (obj.type === 'island') this.cachedActiveIslands.push(obj);
+                        else if (obj.type === 'rock') this.cachedActiveRocks.push(obj);
+                        else if (obj.type === 'shoal') this.cachedActiveShoals.push(obj);
+                        else if (obj.type === 'coralReef') this.cachedActiveCoralReefs.push(obj);
+                    }
                 }
                 for (let i = 0; i < sector.dynamic.length; i++) {
                     this.cachedActiveDynamics.push(sector.dynamic[i]);
@@ -343,11 +379,22 @@ class WorldManager {
      * @returns {Array<Obstacle>}
      */
     getAllStaticObjects() {
-        const allStatics = [];
+        // --- OPTIMIZATION: Only rebuild if dirty ---
+        if (this.allStaticObjectsCache && !this.staticCacheDirty) return this.allStaticObjectsCache;
+
+        // --- OPTIMIZATION: Rebuild cache with deduplication ---
+        this.retrievalFrameId++;
+        this.staticCacheDirty = false;
+        this.allStaticObjectsCache = [];
         for (const sector of this.sectors.values()) {
-            allStatics.push(...sector.static);
+            for (const obj of sector.static) {
+                if (obj.lastRetrievalId !== this.retrievalFrameId) {
+                    obj.lastRetrievalId = this.retrievalFrameId;
+                    this.allStaticObjectsCache.push(obj);
+                }
+            }
         }
-        return allStatics;
+        return this.allStaticObjectsCache;
     }
 
     /**
@@ -368,25 +415,45 @@ class WorldManager {
      * @returns {Array<{x: number, y: number, pennantColor: string}>}
      */
     getAllNpcMapData() {
-        const allNpcData = [];
-        for (const sector of this.sectors.values()) {
+        // Return the cached array instead of building it every frame.
+        // It is updated in the update() loop.
+        return this.cachedNpcMapData;
+    }
+
+    /**
+     * Rebuilds the cached list of NPC data for the minimap.
+     * @private
+     */
+    _updateNpcMapDataCache() {
+        // --- OPTIMIZATION: Return used objects to pool instead of GC ---
+        while (this.cachedNpcMapData.length > 0) {
+            this.mapDataPool.push(this.cachedNpcMapData.pop());
+        }
+
+        // --- OPTIMIZATION: Use manual for-of or for-loop over known sectors ---
+        for (const sectorKey of this.sectors.keys()) {
+            const sector = this.sectors.get(sectorKey);
             // Get data from fully simulated active ships
             for (const npc of sector.dynamic) {
-                allNpcData.push({ x: npc.x, y: npc.y, pennantColor: npc.pennantColor, pathWaypoints: npc.pathWaypoints, currentWaypointIndex: npc.currentWaypointIndex, isPirateHunter: npc.isPirateHunter });
+                const data = this.mapDataPool.pop() || {};
+                data.x = npc.x; data.y = npc.y;
+                data.pennantColor = npc.pennantColor;
+                data.pathWaypoints = npc.pathWaypoints;
+                data.currentWaypointIndex = npc.currentWaypointIndex;
+                data.isPirateHunter = npc.isPirateHunter;
+                this.cachedNpcMapData.push(data);
             }
             // Get data from lightweight abstract objects
             for (const abstractNpc of sector.abstract) {
-                allNpcData.push({
-                    x: abstractNpc.x,
-                    y: abstractNpc.y,
-                    pennantColor: abstractNpc.pennantColor || PENNANT_COLOR,
-                    pathWaypoints: abstractNpc.pathWaypoints || [],
-                    currentWaypointIndex: abstractNpc.currentWaypointIndex || 0,
-                    isPirateHunter: abstractNpc.isPirateHunter
-                });
+                const data = this.mapDataPool.pop() || {};
+                data.x = abstractNpc.x; data.y = abstractNpc.y;
+                data.pennantColor = abstractNpc.pennantColor || PENNANT_COLOR;
+                data.pathWaypoints = abstractNpc.pathWaypoints || [];
+                data.currentWaypointIndex = abstractNpc.currentWaypointIndex || 0;
+                data.isPirateHunter = abstractNpc.isPirateHunter;
+                this.cachedNpcMapData.push(data);
             }
         }
-        return allNpcData;
     }
 
     /**
@@ -396,9 +463,9 @@ class WorldManager {
      */
     _activateSector(sectorKey) {
         const sector = this.sectors.get(sectorKey);
-        if (!sector || sector.abstract.length === 0) return;
+        if (!sector) return;
 
-        console.log(`[WorldManager] Activating sector ${sectorKey}`);
+        if (sector.abstract.length === 0) return;
         
         // --- OPTIMIZATION: Just move instances ---
         // The 'abstract' list now holds full NpcShip instances, so we just move them.
@@ -446,15 +513,9 @@ class WorldManager {
         sector.dynamic = []; // Clear the dynamic list
 
         // --- NEW: Release canvases for deactivating static objects ---
+        // Use the object's own cleanup method to handle simple or chunked caches
         sector.static.forEach(obstacle => {
-            if (obstacle.visualCache) {
-                window.CanvasManager.releaseCanvas(obstacle.visualCache);
-                obstacle.visualCache = null;
-            }
-            if (obstacle.shoreGlowCache) {
-                window.CanvasManager.releaseCanvas(obstacle.shoreGlowCache);
-                obstacle.shoreGlowCache = null;
-            }
+            if (obstacle.releaseCache) obstacle.releaseCache();
         });
     }
 

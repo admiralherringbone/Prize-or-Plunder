@@ -34,7 +34,7 @@
     /* --- New: Concave Corner Box using SVG Background --- */
     /* This SVG defines the entire box, including the border and concave corners, as a background image. */
     /* This uses a single SVG path with a fill for the background and a stroke for the border. */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 500 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L475 0 Q475 25 500 25 L500 475 Q475 475 475 500 L25 500 Q25 475 0 475 Z' fill='%23ddc09a' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20viewBox='0%200%20500%20500'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L475%200%20Q475%2025%20500%2025%20L500%20475%20Q475%20475%20475%20500%20L25%20500%20Q25%20475%200%20475%20Z'%20fill='%23ddc09a'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
     background-size: 100% 100%;
 }
 
@@ -45,7 +45,7 @@
     padding: 40px 20px; /* Reduced side padding */
     box-sizing: border-box; /* Ensure width includes padding */
     /* Updated SVG background with 500x550 coords and padded viewBox (-5 -5 510 560) */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='-5 -5 510 560' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L475 0 Q475 25 500 25 L500 525 Q475 525 475 550 L25 550 Q25 525 0 525 Z' fill='%23ddc09a' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20viewBox='-5%20-5%20510%20560'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L475%200%20Q475%2025%20500%2025%20L500%20525%20Q475%20525%20475%20550%20L25%20550%20Q25%20525%200%20525%20Z'%20fill='%23ddc09a'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
 }
 
 /* --- New: Info Panels (Features & Updates) --- */
@@ -55,7 +55,7 @@
     padding: 30px 20px;
     box-sizing: border-box;
     /* Reuse the parchment style, stretched to fit the vertical aspect ratio */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='-5 -5 360 410' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 25 Q25 25 25 0 L325 0 Q325 25 350 25 L350 375 Q325 375 325 400 L25 400 Q25 375 0 375 Z' fill='%23ddc09a' fill-opacity='0.9' stroke='%23948064' stroke-width='4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20viewBox='-5%20-5%20360%20410'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cpath%20d='M0%2025%20Q25%2025%2025%200%20L325%200%20Q325%2025%20350%2025%20L350%20375%20Q325%20375%20325%20400%20L25%20400%20Q25%20375%200%20375%20Z'%20fill='%23ddc09a'%20fill-opacity='0.9'%20stroke='%23948064'%20stroke-width='4'/%3E%3C/svg%3E");
     background-size: 100% 100%;
     filter: drop-shadow(0 0 15px rgba(0, 0, 0, 0.5));
     color: #3d352a;
@@ -109,7 +109,7 @@
     height: 450px; /* The height of the line */
     top: 50px; /* Positioned 50px from the top */
     /* This new SVG contains both the line and the star, ensuring they are always aligned */
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 27 450' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='13.5' y1='0' x2='13.5' y2='450' stroke='%233d352a' stroke-width='2'/%3E%3Cg transform='translate(1, 212.5)'%3E%3Cpath d='M12.5 -1 Q12.5 12.5 25 12.5 Q12.5 12.5 12.5 26 Q12.5 12.5 0 12.5 Q12.5 12.5 12.5 -1 Z' fill='%233d352a'/%3E%3C/g%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg%20viewBox='0%200%2027%20450'%20xmlns='http://www.w3.org/2000/svg'%3E%3Cline%20x1='13.5'%20y1='0'%20x2='13.5'%20y2='450'%20stroke='%233d352a'%20stroke-width='2'/%3E%3Cg%20transform='translate(1,%20212.5)'%3E%3Cpath%20d='M12.5%20-1%20Q12.5%2012.5%2025%2012.5%20Q12.5%2012.5%2012.5%2026%20Q12.5%2012.5%200%2012.5%20Q12.5%2012.5%2012.5%20-1%20Z'%20fill='%233d352a'/%3E%3C/g%3E%3C/svg%3E");
     background-size: 100% 100%;
     pointer-events: none;
 }
@@ -443,11 +443,6 @@
     margin-bottom: 10px; /* Space between header and preview window */
 }
 
-/* New: Add debug outlines to the main items in the top half */
-.shipyard-top-half > .shipyard-title,
-.shipyard-top-half > .ship-preview-window {
-} /* Removed debug outline */
-
 .shipyard-top-half {
     position: absolute;
     top: 40px; /* Align with parent padding */
@@ -510,11 +505,6 @@
     color: #3d352a;
     margin-bottom: 10px; /* Use margin for consistent spacing */
     transition: all 0.3s ease; /* Smooth transition for expansion */
-}
-
-/* New: Wrapper for option labels to reliably capture hover events for tooltips */
-.option-label {
-    /* This class doesn't need specific styles, it's just a structural element for event targeting. */
 }
 
 /* --- New: Underline the ship name in the stats panel --- */
@@ -635,11 +625,6 @@
 /* New: When an item is expanded, it becomes a column and the picker is centered */
 .option-item.expanded {
     margin-bottom: 20px; /* Increase margin when expanded */
-}
-
-/* --- New: Pop-up Color Picker Wrapper --- */
-.color-picker-wrapper {
-    /* This no longer needs to be a positioning anchor */
 }
 
 #pennant-color-swatch,
@@ -796,5 +781,4 @@
     .info-panel {
         display: none !important;
     }
-}
 }

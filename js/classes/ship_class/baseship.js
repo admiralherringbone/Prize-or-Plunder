@@ -139,6 +139,7 @@ class Ship {
         this.isOverCoralReef = false;
         this.islandCollisionNormal = null; // New: Stores the normal vector of the island collision.
         this.isAgainstIsland = false; // New: Flag for when the ship is colliding with an island.
+        this.lightsOn = false; // --- NEW: Default state for night lights ---
         this.daysStarving = 0; // New: Tracks how many days the crew has gone without full rations.
 
         this._initializeShipComponents(sailColor, pennantColor);

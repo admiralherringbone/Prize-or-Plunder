@@ -7,6 +7,7 @@ class UIManager {
         // Store bounds of UI elements for click detection
         this.debugRankButtonBounds = null;
         this.spyglassJoystickBounds = null; // --- NEW ---
+        this.spyglassCloseButtonBounds = null; // --- NEW ---
         this.spyglassOverlayCache = null;
         this.lastCanvasWidth = 0;
         this.lastCanvasHeight = 0;
@@ -95,6 +96,7 @@ class UIManager {
                 // Only enable interaction if fully open, but draw them fading in
                 this._drawSpyglassJoystick(ctx, canvas, spyglassInputVector);
                 this._drawSpyglassRangeIndicator(ctx, player, spyglassOffsetX, spyglassOffsetY, worldManager);
+                this._drawSpyglassCloseButton(ctx, canvas);
                 
                 ctx.restore();
             }
@@ -294,6 +296,35 @@ class UIManager {
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.fill();
         }
+    }
+
+    /**
+     * --- NEW: Draws an "X" button to close the spyglass. ---
+     * @param {CanvasRenderingContext2D} ctx 
+     * @param {HTMLCanvasElement} canvas 
+     * @private
+     */
+    _drawSpyglassCloseButton(ctx, canvas) {
+        const margin = 30;
+        const radius = 20;
+        const x = canvas.width - margin - radius;
+        const y = margin + radius;
+
+        this.spyglassCloseButtonBounds = { x, y, radius };
+
+        this._drawHudButtonBackground(ctx, x, y, radius);
+
+        ctx.save();
+        ctx.translate(x, y);
+        const size = radius * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(-size, -size); ctx.lineTo(size, size);
+        ctx.moveTo(size, -size); ctx.lineTo(-size, size);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        ctx.restore();
     }
 
     /**
@@ -636,7 +667,83 @@ class UIManager {
         ctx.fillStyle = 'rgba(233, 182, 65, 0.85)';
         ctx.fillRect(0, 0, mapSize, mapSize);
 
+        ctx.strokeStyle = '#B98816';
+        ctx.lineWidth = 4; // Thicker border for emphasis
+        ctx.strokeRect(0, 0, mapSize, mapSize);
+
+        // --- Draw Pathfinder No-Go Zones on Expanded Map ---
+        // This is drawn first so that the semi-transparent stroke appears *behind* the
+        // actual terrain, creating a clean outline effect.
+        if (DEBUG.ENABLED && DEBUG.DRAW_ANCHOR_ZONES) { // Repurposing this flag
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)'; // A slightly more opaque stroke for visibility
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+
+            const allObstacles = allStaticObstacles || [];
+            allObstacles.forEach(obstacle => {
+                // --- NEW: Use precise anchor contour if available ---
+                if (obstacle.anchorZonePolygon && obstacle.anchorZonePolygon.length > 0) {
+                    ctx.lineWidth = 2; // Fixed thin line for precise contour
+                    ctx.beginPath();
+                    obstacle.anchorZonePolygon.forEach((point, index) => {
+                        const scaledX = point.x * mapScaleX;
+                        const scaledY = point.y * mapScaleY;
+                        if (index === 0) ctx.moveTo(scaledX, scaledY);
+                        else ctx.lineTo(scaledX, scaledY);
+                    });
+                    ctx.closePath();
+                    ctx.stroke();
+                } else {
+                    // Fallback to approximate radial expansion
+                    const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
+                    const polygonPoints = geometrySource.outerPerimeterPoints;
+                    if (!polygonPoints) return;
+    
+                    const buffer = obstacle.maxDistanceToPerimeter * 0.5;
+                    ctx.lineWidth = buffer * 2 * mapScaleX;
+    
+                    ctx.beginPath();
+                    polygonPoints.forEach((point, index) => {
+                        const scaledX = point.x * mapScaleX;
+                        const scaledY = point.y * mapScaleY;
+                        if (index === 0) ctx.moveTo(scaledX, scaledY);
+                        else ctx.lineTo(scaledX, scaledY);
+                    });
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+            });
+            ctx.restore();
+        }
+
+        // --- Draw all the map content (obstacles) ---
+        // --- OPTIMIZATION: Use pre-rendered cache instead of drawing thousands of polygons per frame ---
+        if (minimapCache) {
+            ctx.drawImage(minimapCache, 0, 0, mapSize, mapSize);
+        } else {
+            // Fallback if cache is missing (safety)
+            (allStaticObstacles || []).forEach(obstacle => {
+                ctx.fillStyle = '#e4c490'; // Map Land Color
+                ctx.strokeStyle = '#3d352a'; // Map Ink Color
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const points = obstacle.outerPerimeterPoints || obstacle.rockBase?.outerPerimeterPoints;
+                if (!points) return;
+                points.forEach((point, index) => {
+                    const scaledX = point.x * mapScaleX;
+                    const scaledY = point.y * mapScaleY;
+                    if (index === 0) ctx.moveTo(scaledX, scaledY);
+                    else ctx.lineTo(scaledX, scaledY);
+                });
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            });
+        }
+
         // --- NEW: Draw 1000-unit Grid ---
+        // Drawn after terrain cache to ensure lines appear on top.
         ctx.save();
         ctx.lineWidth = 1;
         const GRID_SPACING = 1000;
@@ -658,63 +765,6 @@ class UIManager {
         }
         ctx.restore();
 
-        ctx.strokeStyle = '#B98816';
-        ctx.lineWidth = 4; // Thicker border for emphasis
-        ctx.strokeRect(0, 0, mapSize, mapSize);
-
-        // --- Draw Pathfinder No-Go Zones on Expanded Map ---
-        // This is drawn first so that the semi-transparent stroke appears *behind* the
-        // actual terrain, creating a clean outline effect.
-        if (DEBUG.ENABLED && DEBUG.DRAW_ANCHOR_ZONES) { // Repurposing this flag
-            ctx.save();
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)'; // A slightly more opaque stroke for visibility
-            ctx.lineJoin = 'round';
-            ctx.lineCap = 'round';
-
-            const allObstacles = allStaticObstacles || [];
-            allObstacles.forEach(obstacle => {
-                const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
-                const polygonPoints = geometrySource.outerPerimeterPoints;
-
-                if (!polygonPoints) return;
-
-                // The buffer is half the obstacle's max radius, for a total zone of 1.5x.
-                const buffer = obstacle.maxDistanceToPerimeter * 0.5;
-
-                // Scale the buffer to map coordinates
-                ctx.lineWidth = buffer * 2 * mapScaleX;
-
-                ctx.beginPath();
-                polygonPoints.forEach((point, index) => {
-                    const scaledX = point.x * mapScaleX;
-                    const scaledY = point.y * mapScaleY;
-                    if (index === 0) ctx.moveTo(scaledX, scaledY);
-                    else ctx.lineTo(scaledX, scaledY);
-                });
-                ctx.closePath();
-                ctx.stroke();
-            });
-            ctx.restore();
-        }
-
-        // --- Draw all the map content (obstacles, ships, etc.) ---
-        (allStaticObstacles || []).forEach(obstacle => {
-            ctx.fillStyle = '#e4c490'; // Map Land Color
-            ctx.strokeStyle = '#3d352a'; // Map Ink Color
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            const points = obstacle.outerPerimeterPoints || obstacle.rockBase.outerPerimeterPoints;
-            points.forEach((point, index) => {
-                const scaledX = point.x * mapScaleX;
-                const scaledY = point.y * mapScaleY;
-                if (index === 0) ctx.moveTo(scaledX, scaledY);
-                else ctx.lineTo(scaledX, scaledY);
-            });
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-        });
-
         // --- NEW: Draw Active Sector Boundary ---
         if (typeof DEBUG !== 'undefined' && DEBUG.ENABLED && player && worldManager) {
             const sectorSize = worldManager.sectorSize;
@@ -734,6 +784,26 @@ class UIManager {
             ctx.lineWidth = 2;
             ctx.setLineDash([5, 5]);
             ctx.strokeRect(rectX, rectY, rectW, rectH);
+            ctx.restore();
+        }
+
+        // --- NEW: Debug Labels for Complex Islands ---
+        if (typeof DEBUG !== 'undefined' && DEBUG.ENABLED && allStaticObstacles) {
+            ctx.save();
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${24 * mapScaleX}px Arial`; // Scale font slightly, but keep it readable
+            // Clamp font size
+            if (24 * mapScaleX < 12) ctx.font = '12px Arial';
+            
+            ctx.textAlign = 'center';
+            allStaticObstacles.forEach(obs => {
+                if (obs.isComplex) {
+                    ctx.fillText("Complex", obs.x * mapScaleX, obs.y * mapScaleY);
+                }
+                if (obs.type === 'coralReef') {
+                    ctx.fillText("Reef", obs.x * mapScaleX, obs.y * mapScaleY);
+                }
+            });
             ctx.restore();
         }
 

@@ -53,6 +53,11 @@ class NpcShip extends CustomShip {
         this.turningMomentum = 0; // New: Represents speed memory for turning, mirrors PlayerShip.
         this.isMovingBackward = false; // New: State for reversing.
         this.reverseTimer = 0; // New: Timer for how long to reverse.
+        
+        // --- NEW: Complex Obstacle Awareness ---
+        // Controls whether the AI perceives the concave bays of complex islands as navigable.
+        // Default: false (Treats convex hull as solid wall, safer/simpler avoidance).
+        this.useComplexObstacleAvoidance = options.useComplexObstacleAvoidance || false;
 
 
         // --- AI Failsafe State ---
@@ -682,7 +687,8 @@ class NpcShip extends CustomShip {
                     const nextPoint = { x: futureX, y: futureY };
                     // OPTIMIZATION: Use simplified convex hull check for predictive turning.
                     // This is faster than full geometry and safer than grid checks for irregular shapes.
-                    if (!pathfinder.isLineOfSightClear(lastPoint, nextPoint, [], true, this.nearbyContext.obstacles)) { 
+                    const useSimplified = !this.useComplexObstacleAvoidance;
+                    if (!pathfinder.isLineOfSightClear(lastPoint, nextPoint, [], useSimplified, this.nearbyContext.obstacles)) { 
                         this.turnSafetyFactor = 0.5; // Slow down turn
                         break;
                     }
@@ -2797,7 +2803,9 @@ class NpcShip extends CustomShip {
             }
 
             // Use simplified hull check for performance. 
-            const isClear = pathfinder.isLineOfSightClear({x: this.x, y: this.y}, end, [], true, this.nearbyContext.obstacles);
+            // Determine if we should use the simplified hull (safer, blocks bays) or detailed (allows entry).
+            const useSimplified = !this.useComplexObstacleAvoidance;
+            const isClear = pathfinder.isLineOfSightClear({x: this.x, y: this.y}, end, [], useSimplified, this.nearbyContext.obstacles);
 
             // Debug Visuals
             if (typeof DEBUG !== 'undefined' && DEBUG.ENABLED) {
@@ -3069,12 +3077,17 @@ class NpcShip extends CustomShip {
             // Filter for terrain types
             if (!['island', 'rock', 'coralReef', 'shoal', 'coralReefBase'].includes(obstacle.type)) continue;
 
-            // --- FIX: Use ONLY the simplified Convex Hull for AI avoidance. ---
-            // This prevents the AI from "seeing" and reacting to complex concave shapes (bays, etc.),
-            // which can cause it to get stuck. The physics engine still uses the detailed polygons for actual collisions.
-            if (!obstacle.convexHull) {
-                continue; // If an obstacle has no simplified hull, the AI should ignore it for avoidance.
+            // --- FIX: Select Collision Polygon based on Awareness ---
+            // Default to simplified hull (AI sees bays as walls).
+            let poly = obstacle.convexHull;
+            
+            // If awareness is enabled AND it's a complex island, use the detailed perimeter.
+            // This allows the whiskers to "see" into the bay.
+            if (this.useComplexObstacleAvoidance && obstacle.isComplex && obstacle.outerPerimeterPoints) {
+                poly = obstacle.outerPerimeterPoints;
             }
+
+            if (!poly) continue;
 
             // --- OPTIMIZATION: Ray-AABB Check ---
             // Skip expensive edge checks if the ray doesn't even overlap the obstacle's bounding box.
@@ -3086,8 +3099,6 @@ class NpcShip extends CustomShip {
                     continue;
                 }
             }
-            
-            const poly = obstacle.convexHull;
             
             // Check each edge of the polygon
             for (let i = 0; i < poly.length; i++) {

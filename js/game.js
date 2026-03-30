@@ -20,7 +20,6 @@ const PlunderGame = (function() {
     let cameraX = 0, cameraY = 0;
     let spawnManager; // --- NEW: Spawn Manager ---
 
-    let shorelineRenderer = null; // --- NEW: Shoreline Renderer ---
 
     let screenMouseX = 0; // New: Track screen-space mouse X for UI hover
     let screenMouseY = 0; // New: Track screen-space mouse Y for UI hover
@@ -42,6 +41,14 @@ const PlunderGame = (function() {
     let crowsNestActive = false; // New: Track if Crow's Nest button is held
     let isSpyglassActive = false; // --- NEW: Spyglass state ---
     let spyglassOffsetX = 0;      // --- NEW: Spyglass X offset from player ---
+    let webglShorelineRenderer = null; // --- NEW: WebGL Shoreline Renderer ---
+    let webglGridRenderer = null; // --- NEW: WebGL Grid Renderer ---
+    let webglOceanWavesRenderer = null; // --- NEW: WebGL Ocean Waves Renderer ---
+    let webglIslandRenderer = null; // --- NEW: Standalone Island Renderer ---
+    let webglRockRenderer = null; // --- NEW: Standalone Rock Renderer ---
+    let webglShoalRenderer = null; // --- NEW: Standalone Shoal Renderer ---
+    let webglCoralReefRenderer = null; // --- NEW: Standalone Coral Reef Renderer ---
+    let webglShimmerEnabled = false; // New: State for shimmer toggle
     let spyglassOffsetY = 0;      // --- NEW: Spyglass Y offset from player ---
     let spyglassProgress = 0;     // --- NEW: Animation progress (0.0 to 1.0) ---
     let spyglassInputVector = { x: 0, y: 0 }; // --- NEW: Joystick input vector ---
@@ -395,6 +402,20 @@ const PlunderGame = (function() {
     function processSingleClick(mouseX, mouseY) {
         if (!player) return;
 
+        // --- NEW: Spyglass Close Button Check ---
+        if (isSpyglassActive && uiManager && uiManager.spyglassCloseButtonBounds) {
+            const bounds = uiManager.spyglassCloseButtonBounds;
+            if (distance({x: mouseX, y: mouseY}, bounds) <= bounds.radius) {
+                isSpyglassActive = false;
+                // Reset state
+                spyglassOffsetX = 0;
+                spyglassOffsetY = 0;
+                spyglassInputVector = { x: 0, y: 0 };
+                isDraggingSpyglassJoystick = false;
+                return;
+            }
+        }
+
         // --- Map Toggling Logic (High Priority) ---
         const miniMapSize = 112.5;
         const margin = 20;
@@ -625,14 +646,197 @@ const PlunderGame = (function() {
     }
 
     /**
+     * --- NEW: Helper to calculate and attach Mid-Phase Bounding Volumes ---
+     * Moved from generateWorld to module scope for reuse.
+     */
+    function attachBoundingVolume(obstacle) {
+        const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
+        const points = geometrySource.outerPerimeterPoints || geometrySource.points;
+        
+        if (!points) return;
+
+        let maxDistSq = 0;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (const p of points) {
+            const dx = p.x - obstacle.x;
+            const dy = p.y - obstacle.y;
+            const dSq = dx*dx + dy*dy;
+            if (dSq > maxDistSq) maxDistSq = dSq;
+
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+        }
+        obstacle.boundingRadius = Math.sqrt(maxDistSq);
+        obstacle.boundingRect = { minX, minY, maxX, maxY };
+
+        // Generate Simplified Convex Hull
+        obstacle.convexHull = getConvexHull(points);
+    }
+
+    /**
+     * --- NEW: Generic Hazard Spawner ---
+     * Instantiates a hazard at a specific location and adds it to the world.
+     * Returns true if successful.
+     */
+    function spawnHazard(type, x, y, radiusX, radiusY) {
+        let newObstacle;
+
+        if (type === 'rock') {
+            const irregularPoints = generateIrregularPolygon(x, y, radiusX * 0.8, radiusX * 1.2, 6, 0.8);
+            ensureClockwiseWinding(irregularPoints);
+            newObstacle = new Rock(irregularPoints, radiusX * 0.8, radiusX * 1.2);
+            newObstacle.color = ROCK_COLOR;
+            newObstacle.strokeColor = darkenColor(ROCK_COLOR, 10);
+            newObstacle.proximityRadius = newObstacle.maxDistanceToPerimeter * 0.5;
+        } 
+        else if (type === 'shoal') {
+            let points;
+            let proxy = null;
+            if (typeof IslandShapeGenerator !== 'undefined') {
+                // Use the universal generator for organic, meandering sandbars
+                const generated = IslandShapeGenerator.generate(x, y, radiusX, 'universal');
+                points = generated.shape;
+                proxy = generated.proxy;
+            } else {
+                points = generateIrregularPolygon(x, y, radiusX, radiusY, 20, 0.1);
+            }
+            ensureClockwiseWinding(points);
+            newObstacle = new Shoal(points, radiusX, radiusY);
+            if (proxy) newObstacle.waveProxy = proxy; // Attach proxy for future-proofing
+            newObstacle.proximityRadius = newObstacle.maxDistanceToPerimeter * 0.5;
+        } 
+        else if (type === 'coralReef') {
+            const rockBasePoints = generateIrregularPolygon(x, y, radiusX, radiusY, 12, 0.6);
+            ensureClockwiseWinding(rockBasePoints);
+            // Create temp obstacle just for collision checks during generation? 
+            // No, CoralReef constructor handles the logic, but we need to check collisions externally before adding.
+            newObstacle = new CoralReef(rockBasePoints, { min: 30, max: 40 }, radiusX, radiusY);
+            newObstacle.color = ROCK_COLOR;
+            newObstacle.strokeColor = darkenColor(ROCK_COLOR, 10);
+            newObstacle.proximityRadius = newObstacle.maxDistanceToPerimeter * 0.5;
+        }
+
+        // --- FIX: Validate Geometry ---
+        // Ensure the obstacle has valid points before adding it. 
+        const poly = newObstacle.outerPerimeterPoints || newObstacle.rockBase?.outerPerimeterPoints;
+        if (!poly || poly.length < 3 || poly.some(p => isNaN(p.x) || isNaN(p.y))) {
+            return false; // Skip malformed obstacles
+        }
+
+        if (newObstacle) {
+            // Validate Position (Collision Check)
+            const potentialColliders = spatialGrid.query(newObstacle);
+            for (const existing of potentialColliders) {
+                // --- OPTIMIZATION: Fast distance check for isolated hazards ---
+                // During lazy population, use simple radii for minor rocks instead of full SAT.
+                if (type === 'rock' && existing.type === 'rock') {
+                    const minDist = newObstacle.boundingRadius + existing.boundingRadius;
+                    if (distance(newObstacle, existing) < minDist) return false;
+                    continue;
+                }
+
+                if (existing.type === 'island' || existing.type === 'rock' || existing.type === 'coralReef') {
+                    let existingParts;
+                    if (existing.getRelevantConvexParts && newObstacle.getAABB) {
+                        existingParts = existing.getRelevantConvexParts(newObstacle.getAABB());
+                    } else {
+                        // Fallback for objects without spatial grids
+                        existingParts = existing.convexParts || (existing.rockBase ? existing.rockBase.convexParts : []);
+                    }
+
+                    const newParts = newObstacle.convexParts || (newObstacle.rockBase ? newObstacle.rockBase.convexParts : []);
+                    
+                    for (const np of newParts) {
+                        for (const ep of existingParts) {
+                            if (checkPolygonCollision(np, ep)) return false; // Collision detected
+                        }
+                    }
+                }
+            }
+
+            // Add to World
+            attachBoundingVolume(newObstacle);
+
+            // --- FIX: Generate accurately shaped anchor zones for hazards ---
+            if (typeof newObstacle.generateZonePolygons === 'function') {
+                newObstacle.generateZonePolygons(newObstacle.proximityRadius);
+            }
+
+            worldManager.addStaticObject(newObstacle);
+            spatialGrid.insert(newObstacle);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * --- NEW: Spawns a cluster of rocks around a central point. ---
+     * Used for both connected and isolated rock generation to create arrays/groups.
+     */
+    function spawnRockCluster(centerX, centerY, spreadRadius) {
+        // --- OPTIMIZATION: Use Single Entity Cluster ---
+        const numRocks = Math.floor(getRandomArbitrary(3, 9));
+        const cluster = new window.RockCluster(centerX, centerY, numRocks, spreadRadius);
+
+        // Validate Geometry
+        if (!cluster.convexParts || cluster.convexParts.length === 0) return false;
+
+        // Check Collision for the whole cluster (using its AABB/Hull)
+        // --- FIX: Perform detailed collision check ---
+        // Previous logic rejected the cluster if its AABB touched *anything*.
+        // Since clusters spawn near islands, their AABBs almost always overlap the island's AABB.
+        // We must check the actual geometry to allow clusters to exist near shores.
+        const potentialColliders = spatialGrid.query(cluster);
+        
+        for (const existing of potentialColliders) {
+            // Allow overlapping anchor zones, but not physical geometry
+            if (existing.type === 'island' || existing.type === 'rock' || existing.type === 'coralReef') {
+                
+                // --- OPTIMIZATION: Use Spatial Partitioning ---
+                let existingParts;
+                if (existing.getRelevantConvexParts) {
+                    existingParts = existing.getRelevantConvexParts(cluster.getAABB());
+                } else {
+                    existingParts = existing.convexParts || (existing.rockBase ? existing.rockBase.convexParts : []);
+                }
+
+                for (const np of cluster.convexParts) {
+                    for (const ep of existingParts) {
+                        if (checkPolygonCollision(np, ep)) return false; // Actual collision detected
+                    }
+                }
+            }
+        }
+
+        // If we reach here, no physical collision occurred.
+        attachBoundingVolume(cluster);
+        cluster.proximityRadius = cluster.maxDistanceToPerimeter * 0.5;
+
+        // --- FIX: Generate accurately shaped anchor zone for the cluster ---
+        if (typeof cluster.generateZonePolygons === 'function') {
+            cluster.generateZonePolygons(cluster.proximityRadius);
+        }
+
+        worldManager.addStaticObject(cluster);
+        spatialGrid.insert(cluster);
+        return true;
+    }
+
+    /**
      * Generates the game world with islands, rocks, and NPCs.
      * @param {function} [progressCallback] - Optional function to report loading progress.
      */
-    function generateWorld(progressCallback) {
+    async function generateWorld(progressCallback) { // --- FIX: Async ---
+        console.log("Starting World Generation...");
         // Reset game entities
         // --- NEW: Instantiate the WorldManager ---
-        // The sector size should be larger than the player's view distance.
-        const sectorSize = (Math.max(canvas.width, canvas.height) / worldToScreenScale) * 1.5;
+        // --- FIX: Use a FIXED sector size for consistent chunking ---
+        // We no longer scale sectors with zoom. Instead, we dynamically adjust the 
+        // activation radius in the update loop to cover the viewport.
+        const sectorSize = 3000; // Small, granular chunks (approx average island size)
         worldManager = new WorldManager(WORLD_WIDTH, WORLD_HEIGHT, sectorSize);
 
         cannonballs = [];
@@ -640,49 +844,61 @@ const PlunderGame = (function() {
         player = null;
 
         // Initialize spatial grid
-        spatialGrid = new SpatialGrid(GRID_SIZE, WORLD_WIDTH, WORLD_HEIGHT);
+        spatialGrid = new SpatialGrid(SPATIAL_GRID_CELL_SIZE, WORLD_WIDTH, WORLD_HEIGHT);
 
         // --- NEW: Calculate entity counts based on world area and density ---
         const worldAreaFactor = (WORLD_WIDTH * WORLD_HEIGHT) / (10000 * 10000);
         const numIslands = Math.round(ISLAND_DENSITY * worldAreaFactor);
 
-        // --- NEW: Helper to calculate and attach Mid-Phase Bounding Volumes ---
-        function attachBoundingVolume(obstacle) {
-            const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
-            const points = geometrySource.outerPerimeterPoints || geometrySource.points;
-            
-            if (!points) return;
-
-            let maxDistSq = 0;
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-            for (const p of points) {
-                const dx = p.x - obstacle.x;
-                const dy = p.y - obstacle.y;
-                const dSq = dx*dx + dy*dy;
-                if (dSq > maxDistSq) maxDistSq = dSq;
-
-                if (p.x < minX) minX = p.x;
-                if (p.y < minY) minY = p.y;
-                if (p.x > maxX) maxX = p.x;
-                if (p.y > maxY) maxY = p.y;
-            }
-            obstacle.boundingRadius = Math.sqrt(maxDistSq);
-            obstacle.boundingRect = { minX, minY, maxX, maxY };
-
-            // --- NEW: Generate Simplified Convex Hull ---
-            // We calculate this once and store it for cheap collision checks later.
-            obstacle.convexHull = getConvexHull(points);
-        }
-
         // Generate Islands
         for (let i = 0; i < numIslands; i++) {
+            // --- FIX: Yield to main thread every 5 islands to keep UI responsive ---
+            if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+
             let newIsland;
             let validPosition = false;
             let attempts = 0;
-            const isSmallIsland = Math.random() < ISLAND_SMALL_CHANCE;
-            const baseRadiusX = getRandomArbitrary(isSmallIsland ? ISLAND_SMALL_MIN_RADIUS : ISLAND_LARGE_MIN_RADIUS, isSmallIsland ? ISLAND_SMALL_MAX_RADIUS : ISLAND_LARGE_MAX_RADIUS);
-            const baseRadiusY = getRandomArbitrary(isSmallIsland ? ISLAND_SMALL_MIN_RADIUS : ISLAND_LARGE_MIN_RADIUS, isSmallIsland ? ISLAND_SMALL_MAX_RADIUS : ISLAND_LARGE_MAX_RADIUS);
+            
+            // --- NEW: Size Distribution Logic ---
+            // Use weighted probability brackets to restore the "Giant" spawn chance (5%)
+            // while maintaining a continuous range of sizes.
+            const rSize = Math.random();
+            let sizeT; // 0.0 to 1.0 position in global range
+
+            // Range map (approximate linear mapping of old tiers):
+            // Small (400-1200):  0.000 - 0.133
+            // Medium (1200-2400): 0.133 - 0.333
+            // Large (2400-4800):  0.333 - 0.733
+            // Giant (4800-6400):  0.733 - 1.000
+
+            if (rSize < 0.35) sizeT = Math.random() * 0.133;        // Small (35%)
+            else if (rSize < 0.75) sizeT = 0.133 + Math.random() * 0.200; // Medium (40%)
+            else if (rSize < 0.90) sizeT = 0.333 + Math.random() * 0.400; // Large (15%)
+            else sizeT = 0.733 + Math.random() * 0.267;             // Giant (10%)
+
+            const baseRadiusX = ISLAND_GLOBAL_MIN_RADIUS + sizeT * (ISLAND_GLOBAL_MAX_RADIUS - ISLAND_GLOBAL_MIN_RADIUS);
+            const isSmallIsland = baseRadiusX <= ISLAND_SMALL_THRESHOLD;
+            
+            // --- NEW: Shape Selection Logic ---
+            let shapeType = 'universal'; // Default for all island sizes
+            if (!isSmallIsland) {
+                const r = Math.random();
+                // --- NEW: Universal Island Spawn Logic ---
+                // Universal absorbs the 20% weight previously assigned to 'round' and 'elliptical'.
+                if (r < 0.40) shapeType = 'universal';        // 40% Universal
+                else if (r < 0.50) shapeType = 'c-shape';     // 10% C-Shape
+                else if (r < 0.60) shapeType = 's-shape';     // 10% S-Shape
+                else if (r < 0.70) shapeType = 'crook-shape'; // 10% Crook
+                else if (r < 0.80) shapeType = 'bean-shape';  // 10% Bean
+                else if (r < 0.90) shapeType = 'snake-shape'; // 10% Snake
+                else shapeType = 'universal';                // Final 10% weight to Universal
+            }
+
+            // Calculate radii based on shape
+            // Proportions are now mostly handled by the IslandShapeGenerator,
+            // but we maintain this for legacy compatibility and bounding box logic.
+            const baseRadiusY = baseRadiusX * getRandomArbitrary(0.6, 1.4);
+
             const islandSides = Math.floor(getRandomArbitrary(20, isSmallIsland ? 41 : 161));
             const irregularityFactor = isSmallIsland ? 0.05 : 0.02;
 
@@ -692,9 +908,36 @@ const PlunderGame = (function() {
                 const centerX = getRandomArbitrary(WORLD_BUFFER + safeMargin, WORLD_WIDTH - WORLD_BUFFER - safeMargin);
                 const centerY = getRandomArbitrary(WORLD_BUFFER + safeMargin, WORLD_HEIGHT - WORLD_BUFFER - safeMargin);
                 
-                const islandPoints = generateIrregularPolygon(centerX, centerY, baseRadiusX, baseRadiusY, islandSides, irregularityFactor);
+                let islandPoints;
+                let islandProxy = null; // --- NEW: Store the low-poly proxy ---
+                const complexTypes = ['c-shape', 's-shape', 'crook-shape', 'bean-shape', 'snake-shape', 'universal'];
+                
+                if (complexTypes.includes(shapeType) && typeof IslandShapeGenerator !== 'undefined') {
+                    // --- FIX: Unpack the new object return from generator ---
+                    const generated = IslandShapeGenerator.generate(centerX, centerY, baseRadiusX, shapeType);
+                    islandPoints = generated.shape;
+                    islandProxy = generated.proxy;
+                } else {
+                    islandPoints = generateIrregularPolygon(centerX, centerY, baseRadiusX, baseRadiusY, islandSides, irregularityFactor);
+                }
+
+                // --- FIX: Validate Geometry Immediately ---
+                // If generation created invalid points (NaN or too few), reject this attempt.
+                if (!islandPoints || islandPoints.length < 3 || islandPoints.some(p => isNaN(p.x) || isNaN(p.y))) {
+                    // console.warn("Generated invalid island geometry. Retrying position.");
+                    validPosition = false; 
+                    attempts++; // --- FIX: Increment attempts to avoid infinite loop ---
+                    continue; // Skip to next attempt loop
+                }
+
                 ensureClockwiseWinding(islandPoints);
                 newIsland = new Island(i, islandPoints, baseRadiusX, baseRadiusY, isSmallIsland);
+                if (complexTypes.includes(shapeType)) {
+                    newIsland.isComplex = true;
+                    if (islandProxy) newIsland.waveProxy = islandProxy; // --- NEW: Attach proxy for renderer ---
+                    newIsland.shapeType = shapeType; // Store the shape type for debug labeling
+                    if (shapeType === 'universal') newIsland.isUniversal = true; // Tag for debug
+                }
                 newIsland.color = ISLAND_COLOR;
                 newIsland.strokeColor = darkenColor(ISLAND_COLOR, 10);
 
@@ -703,6 +946,11 @@ const PlunderGame = (function() {
                 // It's a buffer from the polygon's edge, making the total zone 1.5x the obstacle size.
                 // The buffer distance is half the island's max radius.
                 newIsland.proximityRadius = newIsland.maxDistanceToPerimeter * 0.5;
+
+                // --- NEW: Generate Contour-based Zones ---
+                if (newIsland.generateZonePolygons) {
+                    newIsland.generateZonePolygons(newIsland.proximityRadius);
+                }
 
                 validPosition = true;
 
@@ -753,122 +1001,126 @@ const PlunderGame = (function() {
                 spatialGrid.insert(newIsland);
             }
         }
-        if (progressCallback) progressCallback(50);
+        console.log(`Generated ${numIslands} Islands.`);
+        if (progressCallback) progressCallback(50, "Generating Islands...");
+        await new Promise(r => setTimeout(r, 0)); // --- FIX: Yield ---
 
-        // Generate Rocks
-        const numRocks = Math.round(ROCK_DENSITY * worldAreaFactor);
+        // --- NEW: Generate Connected Hazards (Around Islands) ---
+        // Iterate through all generated islands and spawn hazards within their anchor zones.
+        const createdIslands = worldManager.getAllStaticObjects().filter(o => o.type === 'island');
+        
+        for (let idx = 0; idx < createdIslands.length; idx++) {
+            if (idx % 10 === 0) await new Promise(r => setTimeout(r, 0)); // --- FIX: Yield every 10 islands ---
+            const island = createdIslands[idx];
+            // Scale number of hazards by island size (approx 1 hazard per 1000 units of radius)
+            // --- MODIFIED: Increase connected hazard density ---
+            // Use a smaller divisor (2000) and increase the max cap to populate island proximities more.
+            const hazardCount = Math.min(6, Math.ceil(island.boundingRadius / 2000));
+            
+            for (let i = 0; i < hazardCount; i++) {
+                let attempts = 0;
+                let placed = false;
+                while (!placed && attempts < 20) {
+                    // Pick a random spot in the anchor zone (Between hull and proximity radius)
+                    const angle = Math.random() * Math.PI * 2;
+                    // Spawn range: from 1.1x radius to 1.5x radius (anchor zone edge)
+                    const dist = island.maxDistanceToPerimeter + (Math.random() * island.proximityRadius);
+                    
+                    const hX = island.x + Math.cos(angle) * dist;
+                    const hY = island.y + Math.sin(angle) * dist;
 
-        for (let i = 0; i < numRocks; i++) {
-            let newRock;
-            let validPosition = false;
-            let attempts = 0;
-            const baseRockRadius = getRandomArbitrary(ROCK_MIN_RADIUS, ROCK_MAX_RADIUS);
+                    // Pick type: 65% Rock, 10% Shoal, 25% Reef (Reduced shoals)
+                    const r = Math.random();
+                    let type = 'rock';
+                    let radX, radY;
 
-            while (!validPosition && attempts < 100) {
-                const centerX = getRandomArbitrary(WORLD_BUFFER + baseRockRadius, WORLD_WIDTH - WORLD_BUFFER - baseRockRadius);
-                const centerY = getRandomArbitrary(WORLD_BUFFER + baseRockRadius, WORLD_HEIGHT - WORLD_BUFFER - baseRockRadius);
-                const rockIrregularPoints = generateIrregularPolygon(centerX, centerY, baseRockRadius * 0.8, baseRockRadius * 1.2, 6, 0.8);
-                ensureClockwiseWinding(rockIrregularPoints);
-                newRock = new Rock(rockIrregularPoints, baseRockRadius * 0.8, baseRockRadius * 1.2);
-                newRock.color = ROCK_COLOR;
-                newRock.strokeColor = darkenColor(ROCK_COLOR, 10);
-                // It's a buffer from the polygon's edge, making the total zone 1.5x the obstacle size.
-                // The buffer distance is half the rock's max radius.
-                newRock.proximityRadius = newRock.maxDistanceToPerimeter * 0.5;
-
-                validPosition = true;
-                const potentialColliders = spatialGrid.query(newRock);
-                for (const existingObstacle of potentialColliders) {
-                    if (existingObstacle.type === 'island' || existingObstacle.type === 'rock') {
-                        // Simplified check for brevity
-                        if (checkPolygonCollision(newRock.convexParts[0], existingObstacle.convexParts[0])) {
-                            validPosition = false;
-                            break;
+                    if (r < 0.65) {
+                        type = 'rock';
+                        // --- NEW: Chance for Rock Cluster (Connected) ---
+                        if (Math.random() < 0.15) { // Reduced cluster chance (was 0.3)
+                            placed = spawnRockCluster(hX, hY, getRandomArbitrary(200, 400));
+                        } else {
+                            radX = getRandomArbitrary(ROCK_MIN_RADIUS, ROCK_MAX_RADIUS);
+                            radY = radX;
+                            placed = spawnHazard(type, hX, hY, radX, radY);
                         }
+                    } else if (r < 0.75) {
+                        type = 'shoal';
+                        radX = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
+                        radY = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
+                        placed = spawnHazard(type, hX, hY, radX, radY);
+                    } else {
+                        type = 'coralReef';
+                        radX = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
+                        radY = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
+                        placed = spawnHazard(type, hX, hY, radX, radY);
+                    }
+
+                    attempts++;
+                }
+            }
+        }
+        console.log("Generated Connected Hazards.");
+        if (progressCallback) progressCallback(55, "Placing Connected Hazards...");
+        await new Promise(r => setTimeout(r, 0)); // --- FIX: Yield ---
+
+        // --- NEW: Global Population for Isolated Hazards ---
+        // We now generate all open-ocean hazards upfront to prevent runtime stuttering.
+        console.log("Generating Isolated Hazards...");
+        const sectors = Array.from(worldManager.sectors.values());
+        const totalSectors = sectors.length;
+
+        // Helper to spawn items based on density
+        const spawnLocalGroup = (density, type, minR, maxR, bounds) => {
+            const sectorAreaFactor = (worldManager.sectorSize * worldManager.sectorSize) / (10000 * 10000);
+                const expectedCount = density * sectorAreaFactor;
+                let count = Math.floor(expectedCount);
+                if (Math.random() < (expectedCount % 1)) count++;
+
+                for (let i = 0; i < count; i++) {
+                    let placed = false; let attempts = 0;
+                    while (!placed && attempts < 10) {
+                        const rX = getRandomArbitrary(minR, maxR);
+                        const rY = (type === 'rock') ? rX : getRandomArbitrary(minR, maxR);
+                        const safeMargin = Math.max(rX, rY);
+                        const x = getRandomArbitrary(bounds.minX + safeMargin, bounds.maxX - safeMargin);
+                        const y = getRandomArbitrary(bounds.minY + safeMargin, bounds.maxY - safeMargin);
+                        
+                        if (type === 'rock' && Math.random() < 0.25) {
+                            placed = spawnRockCluster(x, y, getRandomArbitrary(250, 500));
+                        } else {
+                            placed = spawnHazard(type, x, y, rX, rY);
+                        }
+                        attempts++;
                     }
                 }
-                attempts++;
-            }
-            if (validPosition) {
-                attachBoundingVolume(newRock);
-                worldManager.addStaticObject(newRock);
-                spatialGrid.insert(newRock);
-            }
-        }
-        if (progressCallback) progressCallback(60);
+        };
 
-        // Generate Shoals
-        const numShoals = Math.round(SHOAL_DENSITY * worldAreaFactor);
+        for (let i = 0; i < totalSectors; i++) {
+            // Yield every 10 sectors to keep the loading screen moving smoothly
+            if (i % 10 === 0) {
+                const pct = 60 + (i / totalSectors) * 30; // Maps 60% -> 90%
+                if (progressCallback) progressCallback(pct, "Populating High Seas...");
+                await new Promise(r => setTimeout(r, 0));
+            }
 
-        for (let i = 0; i < numShoals; i++) {
-            const baseRadiusX = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
-            const baseRadiusY = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
-            const safeMargin = Math.max(baseRadiusX, baseRadiusY);
-            const centerX = getRandomArbitrary(WORLD_BUFFER + safeMargin, WORLD_WIDTH - WORLD_BUFFER - safeMargin);
-            const centerY = getRandomArbitrary(WORLD_BUFFER + safeMargin, WORLD_HEIGHT - WORLD_BUFFER - safeMargin);
-            const shoalIrregularPoints = generateIrregularPolygon(centerX, centerY, baseRadiusX, baseRadiusY, 20, 0.1);
-            ensureClockwiseWinding(shoalIrregularPoints);
-            const newShoal = new Shoal(shoalIrregularPoints, baseRadiusX, baseRadiusY);
-            // It's a buffer from the polygon's edge, making the total zone 1.5x the obstacle size.
-            // The buffer distance is half the shoal's max radius.
-            newShoal.proximityRadius = newShoal.maxDistanceToPerimeter * 0.5;
-            attachBoundingVolume(newShoal);
-            worldManager.addStaticObject(newShoal);
-            spatialGrid.insert(newShoal);
+            const sector = sectors[i];
+            const bounds = {
+                minX: sector.x * worldManager.sectorSize,
+                minY: sector.y * worldManager.sectorSize,
+                maxX: (sector.x + 1) * worldManager.sectorSize,
+                maxY: (sector.y + 1) * worldManager.sectorSize
+            };
+
+            spawnLocalGroup(ROCK_DENSITY, 'rock', ROCK_MIN_RADIUS, ROCK_MAX_RADIUS, bounds);
+            spawnLocalGroup(SHOAL_DENSITY, 'shoal', SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS, bounds);
+            spawnLocalGroup(CORAL_REEF_DENSITY, 'coralReef', SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS, bounds);
         }
 
-        // Generate Coral Reefs
-        const numCoralReefs = Math.round(CORAL_REEF_DENSITY * worldAreaFactor);
+        console.log("Global Population Complete.");
 
-        for (let i = 0; i < numCoralReefs; i++) {
-            let validPosition = false;
-            let attempts = 0;
-            let newCoralReef;
-            const baseRadiusX = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
-            const baseRadiusY = getRandomArbitrary(SHOAL_REEF_MIN_RADIUS, SHOAL_REEF_MAX_RADIUS);
-
-            while (!validPosition && attempts < 100) {
-                const safeMargin = Math.max(baseRadiusX, baseRadiusY);
-                const centerX = getRandomArbitrary(WORLD_BUFFER + safeMargin, WORLD_WIDTH - WORLD_BUFFER - safeMargin);
-                const centerY = getRandomArbitrary(WORLD_BUFFER + safeMargin, WORLD_HEIGHT - WORLD_BUFFER - safeMargin);
-                const reefRockBasePoints = generateIrregularPolygon(centerX, centerY, baseRadiusX, baseRadiusY, 12, 0.6);
-                ensureClockwiseWinding(reefRockBasePoints);
-                const tempRockBaseObstacle = new Obstacle(reefRockBasePoints, ROCK_COLOR, baseRadiusX, baseRadiusY, 'coralReefBase');
-
-                validPosition = true;
-                const potentialColliders = spatialGrid.query(tempRockBaseObstacle);
-                for (const existingObstacle of potentialColliders) {
-                    // Coral reefs should not overlap with any other solid object.
-                    if (existingObstacle.type === 'island' || existingObstacle.type === 'rock' || existingObstacle.type === 'coralReef') {
-                        // A reef's rock base is a single convex part. Check it against all parts of the existing obstacle.
-                        for (const existingPart of existingObstacle.convexParts) {
-                            if (checkPolygonCollision(tempRockBaseObstacle.convexParts[0], existingPart)) {
-                                validPosition = false;
-                                break;
-                            }
-                        }
-                        if (!validPosition) {
-                            break;
-                        }
-                    }
-                }
-                if (validPosition) {
-                    newCoralReef = new CoralReef(reefRockBasePoints, { min: 30, max: 40 }, baseRadiusX, baseRadiusY);
-                    newCoralReef.color = ROCK_COLOR;
-                    newCoralReef.strokeColor = darkenColor(ROCK_COLOR, 10);
-                    // It's a buffer from the polygon's edge, making the total zone 1.5x the obstacle size.
-                    // The buffer distance is half the reef's max radius.
-                    newCoralReef.proximityRadius = newCoralReef.maxDistanceToPerimeter * 0.5;
-                }
-                attempts++;
-            }
-            if (validPosition) {
-                attachBoundingVolume(newCoralReef);
-                worldManager.addStaticObject(newCoralReef);
-                spatialGrid.insert(newCoralReef);
-            }
-        }
-        if (progressCallback) progressCallback(70);
+        // Skip the old upfront generation loop entirely
+        if (progressCallback) progressCallback(95, "Finalizing World...");
 
         // After all obstacles are created, find the largest proximity radius for query optimization.
         const allObstacles = worldManager.getAllStaticObjects();
@@ -878,13 +1130,14 @@ const PlunderGame = (function() {
         // Note: Static objects are now inserted incrementally during generation.
 
         maxObstacleProximityRadius = allObstacles.reduce((max, obs) => Math.max(max, obs.proximityRadius), 0);
+        console.log("World Generation Complete.");
     }
 
     /**
      * Initializes the game world, static elements, and NPCs, but does NOT spawn the player.
      * This is called on page load to prepare the background for the start screen.
      */
-    function initializeWorld(progressCallback) {
+    async function initializeWorld(progressCallback) { // --- FIX: Async ---
         // This function is designed to be called once on page load.
         // It sets up everything needed to render the world *without* the player.
         // The gameLoop will be started separately by startGame().
@@ -899,10 +1152,28 @@ const PlunderGame = (function() {
         lastWindChangeTime = performance.now();
         // --- FIX: Expose windDirection globally for legacy rig scripts ---
         window.windDirection = windDirection;
-        generateWorld(progressCallback);
+        
+        // --- FIX: Await world generation ---
+        console.log("Initializing World...");
+        await generateWorld(progressCallback);
 
-        // --- NEW: Initialize Shoreline Renderer ---
-        shorelineRenderer = new ShorelineRenderer();
+        // --- NEW: Initialize WebGL Shoreline Renderer ---
+        if (window.webglManager && window.webglManager.getGL()) { // Check if WebGL context is actually available
+            webglShorelineRenderer = new ShorelineGLRenderer(window.webglManager);
+            webglGridRenderer = new GridGLRenderer(window.webglManager);
+            webglShorelineRenderer.setShimmerEnabled(webglShimmerEnabled); // Initialize shimmer state
+            webglOceanWavesRenderer = new OceanWavesGLRenderer(window.webglManager);
+            webglIslandRenderer = new IslandGLRenderer(window.webglManager, webglShorelineRenderer.bufferManager);
+            webglRockRenderer = new RockGLRenderer(window.webglManager, webglShorelineRenderer.bufferManager);
+            webglShoalRenderer = new ShoalGLRenderer(window.webglManager, webglShorelineRenderer.bufferManager);
+            webglCoralReefRenderer = new CoralReefGLRenderer(window.webglManager, webglShorelineRenderer.bufferManager);
+            
+            // --- NEW: Bake all static terrain into GPU buffers ---
+            const staticObjects = worldManager.getAllStaticObjects();
+            staticObjects.forEach(obs => {
+                webglShorelineRenderer.bakeIsland(obs);
+            });
+        }
 
         // --- NEW: Pathfinder uses all obstacles from the WorldManager ---
         const staticObstacles = worldManager.getAllStaticObjects();
@@ -946,7 +1217,12 @@ const PlunderGame = (function() {
         spawnManager = new SpawnManager(worldManager, pathfinder, () => player, spatialGrid);
 
         // Spawn NPCs now that the pathfinder is ready
-        spawnManager.spawnInitialNpcs();
+        // --- FIX: Await async spawning to prevent UI freeze ---
+        console.log("Starting NPC Spawn...");
+        await spawnManager.spawnInitialNpcs(progressCallback);
+        
+        console.log("NPC Spawning Complete. Finalizing World Init...");
+        
         // Ensure canvas filter is clean
         canvas.style.filter = 'none';
 
@@ -987,24 +1263,8 @@ const PlunderGame = (function() {
         // This ensures the worldToScreenScale is correct for the custom ship's size.
         resizeCanvas();
 
-    // --- NEW: Re-initialize WorldManager with the correct sector size ---
-    // This ensures the active area scales with the player's ship size and zoom level.
-    if (worldManager) {
-        const allStaticObjects = worldManager.getAllStaticObjects();
-        const allAbstractNpcs = worldManager.getAllAbstractNpcs();
-
-        const sectorSize = (Math.max(canvas.width, canvas.height) / worldToScreenScale) * 1.5;
-        worldManager = new WorldManager(WORLD_WIDTH, WORLD_HEIGHT, sectorSize);
-
-        allStaticObjects.forEach(obj => worldManager.addStaticObject(obj));
-        allAbstractNpcs.forEach(npc => worldManager.addAbstractNpc(npc));
-
-        // The pathfinder was also created with the old world state. Re-create it
-        // so it has access to the correctly binned static objects if needed.
-        pathfinder = new Pathfinder(worldManager.getAllStaticObjects(), WORLD_WIDTH, WORLD_HEIGHT, PATHFINDING_CELL_SIZE);
-    }
-    // --- NEW: Re-create the minimap cache with the new world state ---
-    _createMinimapCache(worldManager.getAllStaticObjects());
+        // Note: WorldManager is already initialized by generateWorld(). 
+        // We don't need to recreate it here because we now use dynamic activation radius.
 
 
         // --- FIX: Start the loop via requestAnimationFrame to ensure a valid timestamp ---
@@ -1124,6 +1384,9 @@ const PlunderGame = (function() {
             const points = obstacle.outerPerimeterPoints || obstacle.rockBase?.outerPerimeterPoints;
             if (!points) return;
 
+            // Set 50% opacity for shoals and reefs, keep full opacity for islands and rocks
+            cacheCtx.globalAlpha = (obstacle.type === 'shoal' || obstacle.type === 'coralReef') ? 0.5 : 1.0;
+
             cacheCtx.fillStyle = '#e4c490'; // Map Land Color (Parchment shade)
             cacheCtx.strokeStyle = '#3d352a'; // Map Ink Color
             cacheCtx.lineWidth = 4; // Thicker stroke for visibility when scaled down
@@ -1138,144 +1401,235 @@ const PlunderGame = (function() {
             cacheCtx.fill();
             cacheCtx.stroke();
         });
+        cacheCtx.globalAlpha = 1.0; // Reset alpha for subsequent layers
+
+        // --- NEW: Bake Static Debug Info into Cache ---
+        if (typeof DEBUG !== 'undefined' && DEBUG.ENABLED) {
+            // 1. Draw Identification Labels (Red)
+            // We draw these before anchor zones so they are always visible in debug mode.
+            cacheCtx.save();
+            cacheCtx.fillStyle = '#FF0000'; // Red text for visibility
+            cacheCtx.font = 'bold 120px monospace';
+            cacheCtx.textAlign = 'center';
+            cacheCtx.textBaseline = 'middle';
+
+            allStaticObstacles.forEach(obstacle => {
+                if (obstacle.isComplex && obstacle.shapeType) {
+                    const shapeLabels = {
+                        'c-shape': 'C', 's-shape': 'S', 'crook-shape': 'Ck',
+                        'bean-shape': 'Bn', 'snake-shape': 'Sk', 'universal': 'U'
+                    };
+                    const label = shapeLabels[obstacle.shapeType];
+                    if (label) {
+                        cacheCtx.fillText(label, obstacle.x * mapScaleX, obstacle.y * mapScaleY);
+                    }
+                }
+                if (obstacle.type === 'coralReef') {
+                    cacheCtx.fillText('CR', obstacle.x * mapScaleX, obstacle.y * mapScaleY);
+                }
+            });
+            cacheCtx.restore();
+
+            // 1. Draw Anchor Zones (Cyan)
+            if (DEBUG.DRAW_ANCHOR_ZONES) {
+                cacheCtx.save();
+                cacheCtx.strokeStyle = 'rgba(0, 255, 255, 0.4)'; 
+                cacheCtx.lineWidth = 2; 
+                cacheCtx.setLineDash([4, 4]); 
+
+                allStaticObstacles.forEach(obstacle => {
+                    if (!obstacle.proximityRadius) return;
+                    
+                    cacheCtx.beginPath();
+                    // Use pre-calculated polygon if available (Islands)
+                    if (obstacle.anchorZonePolygon && obstacle.anchorZonePolygon.length > 0) {
+                        obstacle.anchorZonePolygon.forEach((p, i) => {
+                            const sx = p.x * mapScaleX;
+                            const sy = p.y * mapScaleY;
+                            if (i === 0) cacheCtx.moveTo(sx, sy);
+                            else cacheCtx.lineTo(sx, sy);
+                        });
+                        cacheCtx.closePath();
+                    } 
+                    // Fallback for Rocks/Reefs: Radial expansion
+                    else {
+                        const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
+                        const points = geometrySource.outerPerimeterPoints;
+                        if (points) {
+                            points.forEach((p, i) => {
+                                const dx = p.x - obstacle.x;
+                                const dy = p.y - obstacle.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if (dist > 0.001) {
+                                    const scale = (dist + obstacle.proximityRadius) / dist;
+                                    // Transform to Map Space
+                                    const ex = (obstacle.x + dx * scale) * mapScaleX;
+                                    const ey = (obstacle.y + dy * scale) * mapScaleY;
+                                    if (i === 0) cacheCtx.moveTo(ex, ey);
+                                    else cacheCtx.lineTo(ex, ey);
+                                }
+                            });
+                            cacheCtx.closePath();
+                        }
+                    }
+                    
+                    cacheCtx.stroke();
+                });
+                cacheCtx.restore();
+            }
+        }
+
         console.log("[Minimap] Static map cache created.");
-    }
-
-    /**
-     * Creates a pre-rendered, blurred "glow" effect for an obstacle's shoreline.
-     * This is cached on the obstacle object for performance.
-     * @param {Obstacle} obstacle - The island or rock to create the glow for.
-     * @private
-     */
-    function _createShoreGlowCacheForObstacle(obstacle) {
-        // --- FIX: Correctly get geometry for composite CoralReef objects ---
-        const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
-        const points = geometrySource.outerPerimeterPoints || geometrySource.points;
-        if (!points || points.length === 0) return;
-
-        const aabb = getPolygonAABB(points);
-        if (!isFinite(aabb.minX) || !isFinite(aabb.minY) || !isFinite(aabb.maxX) || !isFinite(aabb.maxY)) {
-            console.warn("Invalid AABB calculated for obstacle, skipping shore glow cache.", obstacle);
-            return;
-        }
-        
-        // --- NEW: Dynamic Sizing based on Obstacle Size ---
-        const size = obstacle.boundingRadius || Math.max(aabb.maxX - aabb.minX, aabb.maxY - aabb.minY) / 2;
-        // Scale blur radius: Min 40, Max 120, or 40% of radius
-        const blurRadius = Math.max(40, Math.min(120, size * 0.4));
-        
-        const margin = blurRadius * 2; // Margin to prevent blur from being clipped
-
-        // --- FIX: Round dimensions to integers to prevent errors creating the canvas ---
-        const width = Math.round((aabb.maxX - aabb.minX) + margin * 2);
-        const height = Math.round((aabb.maxY - aabb.minY) + margin * 2);
-
-        const MAX_CANVAS_DIMENSION = 16384; // Common browser limit for canvas dimensions
-
-        if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height) || width > MAX_CANVAS_DIMENSION || height > MAX_CANVAS_DIMENSION) {
-            console.warn(`Skipping shore glow cache creation due to invalid or excessive dimensions. Width: ${width}, Height: ${height}. Obstacle:`, obstacle);
-            return;
-        }
-
-        const cacheCanvas = window.CanvasManager.getCanvas(width, height);
-        cacheCanvas.width = width;
-        cacheCanvas.height = height;
-        const cacheCtx = cacheCanvas.getContext('2d');
-        // Defensive check: If context creation fails, return early to prevent TypeError.
-        // This can happen if canvas dimensions are excessively large or due to browser issues.
-        if (!cacheCtx) {
-            console.warn(`Failed to get 2D context for shore glow cache. Width: ${width}, Height: ${height}. Obstacle:`, obstacle);
-            return;
-        }
-
-        cacheCtx.translate(margin - aabb.minX, margin - aabb.minY);
-
-        // 1. Draw the Water Glow (Shadow)
-
-        obstacle.shoreGlowCache = cacheCanvas;
-        obstacle.shoreGlowOffset = { x: aabb.minX - margin, y: aabb.minY - margin };
     }
 
     /**
      * Resets the game state and regenerates the world.
      */
-    function resetGame() {
+    async function resetGame() { // --- FIX: Async ---
         console.log("Game Over! Returning to main menu...");
-
-        // --- NEW: Reset Game Over State ---
-        gameOverState.active = false;
-        gameOverState.reason = '';
-        gameOverState.timer = 0;
-        gameOverState.canRestart = false;
-        gameOverState.lastFilterString = ''; // Reset cache
-        gameOverState.lastOpacity = -1;      // Reset cache
-
-        canvas.style.filter = 'none'; // --- NEW: Reset CSS Filter ---
-        if (gameOverOverlay) gameOverOverlay.style.display = 'none';
-        if (effectManager) effectManager.reset();
-        if (boardingManager) boardingManager.reset();
-        currentZoomMultiplier = 1.0;
         
-        if (environmentManager) environmentManager.reset();
-        if (spawnManager) spawnManager.reset();
+        // --- FIX: Add Try-Catch to prevent hanging if generation fails ---
+        try {
+            // --- NEW: Show Loading Screen during reset ---
+            if (window.LoadingScreenManager) {
+                window.LoadingScreenManager.show(true);
+                window.LoadingScreenManager.updateProgress(0);
+                window.LoadingScreenManager.updateStatus("Resetting World...");
+            }
 
-        // Clear dynamic entities lists
-        volleys = []; 
-        cannonballs = [];
-        
-        // --- FIX: Clear active lists to remove old entities ---
-        activeNpcs = [];
-        activeIslands = [];
-        activeRocks = [];
-        activeShoals = [];
-        activeCoralReefs = [];
-        allShips = [];
+            // --- NEW: Reset Game Over State ---
+            gameOverState.active = false;
+            gameOverState.reason = '';
+            gameOverState.timer = 0;
+            gameOverState.canRestart = false;
+            gameOverState.lastFilterString = ''; // Reset cache
+            gameOverState.lastOpacity = -1;      // Reset cache
 
-        // --- NEW: Close Inventory UI if open ---
-        const inventoryScreen = document.getElementById('inventory-screen');
-        if (inventoryScreen) {
-            inventoryScreen.style.display = 'none';
+            // --- FIX: Reset CSS Filters on both layers ---
+            canvas.style.filter = 'none';
+            if (window.webglManager && window.webglManager.canvas) {
+                window.webglManager.canvas.style.filter = 'none';
+            }
+            if (gameOverOverlay) gameOverOverlay.style.display = 'none';
+            if (effectManager) effectManager.reset();
+            if (boardingManager) boardingManager.reset();
+            currentZoomMultiplier = 1.0;
+            
+            if (environmentManager) environmentManager.reset();
+            if (spawnManager) spawnManager.reset();
+
+            // Clear dynamic entities lists
+            volleys = []; 
+            cannonballs = [];
+            
+            // --- FIX: Clear active lists to remove old entities ---
+            activeNpcs = [];
+            activeIslands = [];
+            activeRocks = [];
+            activeShoals = [];
+            activeCoralReefs = [];
+            // --- FIX: Explicitly release all cached visuals before destroying the world ---
+            // This prevents a memory leak where cached canvases are not returned to the pool,
+            // which could cause subsequent world generations to fail to render some obstacles
+            // due to resource exhaustion.
+            if (worldManager) {
+                worldManager.getAllStaticObjects().forEach(obs => {
+                    if (obs.releaseCache) obs.releaseCache();
+                });
+
+                // --- NEW: Reset WebGL Renderer state ---
+                // This clears the GPU buffers and baked layer data to prevent 
+                // memory leaks and ID conflicts when the new world is generated.
+                if (webglShorelineRenderer) webglShorelineRenderer.reset();
+
+                worldManager.sectors.clear(); // Clear old sectors map
+            }
+            allShips = [];
+
+            // --- NEW: Close Inventory UI if open ---
+            const inventoryScreen = document.getElementById('inventory-screen');
+            if (inventoryScreen) {
+                inventoryScreen.style.display = 'none';
+            }
+            const cargoDialog = document.getElementById('cargo-action-dialog');
+            if (cargoDialog) {
+                cargoDialog.style.display = 'none';
+            }
+            if (boardingManager) boardingManager.inventoryTarget = null;
+
+            // --- FIX: Clear Player & Fleet BEFORE regenerating world ---
+            // This is crucial. We must clear the player so resizeCanvas() calculates
+            // the correct "Start Menu" zoom level. generateWorld() uses that zoom
+            // to set the sector size. If we don't do this, the sector size is calculated
+            // for the zoomed-in gameplay view, causing obstacles to cull/disappear 
+            // when viewed from the zoomed-out start menu.
+            player = null;
+            fleetManager = null;
+            resizeCanvas();
+
+            // Define callback for loading screen updates
+            const progressCallback = (p, text) => {
+                if (window.LoadingScreenManager) {
+                    window.LoadingScreenManager.updateProgress(p);
+                    if (text) window.LoadingScreenManager.updateStatus(text);
+                }
+            };
+
+            // Regenerate World (for background ambiance)
+            // --- FIX: Await world generation ---
+            await generateWorld(progressCallback);
+
+            // --- NEW: Re-bake all static terrain into GPU buffers ---
+            // This ensures islands, shoals, and reefs are drawn in the new session.
+            if (webglShorelineRenderer) {
+                worldManager.getAllStaticObjects().forEach(obs => {
+                    webglShorelineRenderer.bakeIsland(obs);
+                });
+            }
+            
+            const staticObstacles = worldManager.getAllStaticObjects();
+            pathfinder = new Pathfinder(staticObstacles, WORLD_WIDTH, WORLD_HEIGHT, PATHFINDING_CELL_SIZE);
+            
+            // --- FIX: Re-create SpawnManager with new world references ---
+            // The old spawnManager holds references to the destroyed WorldManager/SpatialGrid.
+            // We must re-instantiate it so it spawns the background NPCs into the new valid world.
+            spawnManager = new SpawnManager(worldManager, pathfinder, () => player, spatialGrid);
+            // --- FIX: Await async spawning on reset too ---
+            await spawnManager.spawnInitialNpcs(progressCallback);
+
+            lastWindChangeTime = performance.now();
+            
+            // Reset Camera to center of world for background view
+            const effectiveScale = worldToScreenScale;
+            const viewW = canvas.width / effectiveScale;
+            const viewH = canvas.height / effectiveScale;
+            cameraX = (WORLD_WIDTH - viewW) / 2;
+            cameraY = (WORLD_HEIGHT - viewH) / 2;
+
+            // --- FIX: Removed incorrect reset to 0,0 which overrode the centering logic above ---
+            // keys = {}; // InputManager handles keys
+
+            // Show Start Screen
+            const startScreen = document.getElementById('start-screen');
+            if (startScreen) startScreen.style.display = 'flex';
+
+            // Disable game input
+            isGameActive = false;
+
+            // --- NEW: Hide Loading Screen ---
+            if (window.LoadingScreenManager) {
+                window.LoadingScreenManager.hide();
+            }
+
+        } catch (error) {
+            console.error("CRITICAL: Error during resetGame:", error);
+            // Emergency recovery: Show Start Screen anyway
+            const startScreen = document.getElementById('start-screen');
+            if (startScreen) startScreen.style.display = 'flex';
+            if (window.LoadingScreenManager) window.LoadingScreenManager.hide();
+            isGameActive = false;
+            alert("An error occurred while resetting the game. Returning to menu.");
         }
-        const cargoDialog = document.getElementById('cargo-action-dialog');
-        if (cargoDialog) {
-            cargoDialog.style.display = 'none';
-        }
-        if (boardingManager) boardingManager.inventoryTarget = null;
-
-        // Regenerate World (for background ambiance)
-        generateWorld();
-        const staticObstacles = worldManager.getAllStaticObjects();
-        pathfinder = new Pathfinder(staticObstacles, WORLD_WIDTH, WORLD_HEIGHT, PATHFINDING_CELL_SIZE);
-        
-        // Spawn NPCs for background activity
-        if (spawnManager) spawnManager.spawnInitialNpcs();
-        
-        // Clear Player & Fleet
-        player = null;
-        fleetManager = null;
-
-        // --- FIX: Recalculate zoom immediately so camera centering uses the correct scale ---
-        resizeCanvas();
-        
-        lastWindChangeTime = performance.now();
-        
-        // Reset Camera to center of world for background view
-        const effectiveScale = worldToScreenScale;
-        const viewW = canvas.width / effectiveScale;
-        const viewH = canvas.height / effectiveScale;
-        cameraX = (WORLD_WIDTH - viewW) / 2;
-        cameraY = (WORLD_HEIGHT - viewH) / 2;
-
-        // --- FIX: Removed incorrect reset to 0,0 which overrode the centering logic above ---
-        
-        keys = {};
-
-        // Show Start Screen
-        const startScreen = document.getElementById('start-screen');
-        if (startScreen) startScreen.style.display = 'flex';
-
-        // Disable game input
-        isGameActive = false;
     }
 
     /**
@@ -1355,37 +1709,6 @@ const PlunderGame = (function() {
     }
 
     /**
-     * Draws the spatial grid lines for debugging purposes.
-     * @param {number} cameraX - The camera's current X position.
-     * @param {number} cameraY - The camera's current Y position.
-     * @param {number} viewWidth - The effective width of the camera's view.
-     * @param {number} viewHeight - The effective height of the camera's view.
-     */
-    function drawGrid(cameraX, cameraY, viewWidth, viewHeight) { // Changed zoomLevel to worldToScreenScale
-        ctx.strokeStyle = GRID_COLOR;
-        ctx.lineWidth = 1;
-
-        const startCol = Math.floor(cameraX / GRID_SIZE);
-        const endCol = Math.ceil((cameraX + viewWidth) / GRID_SIZE);
-        const startRow = Math.floor(cameraY / GRID_SIZE);
-        const endRow = Math.ceil((cameraY + viewHeight) / GRID_SIZE);
-
-        ctx.beginPath();
-        for (let i = startCol; i <= endCol; i++) {
-            const x = i * GRID_SIZE;
-            ctx.moveTo(x, startRow * GRID_SIZE);
-            ctx.lineTo(x, endRow * GRID_SIZE);
-        }
-
-        for (let i = startRow; i <= endRow; i++) {
-            const y = i * GRID_SIZE;
-            ctx.moveTo(startCol * GRID_SIZE, y);
-            ctx.lineTo(endCol * GRID_SIZE, y);
-        }
-        ctx.stroke();
-    }
-
-    /**
      * --- NEW: Draws the main game world from a specific camera perspective. ---
      * This is a refactored helper to avoid duplicating drawing code for the spyglass view.
      * @param {number} cameraX - The world X coordinate for the top-left of the view.
@@ -1403,12 +1726,8 @@ const PlunderGame = (function() {
         ctx.scale(effectiveScale, effectiveScale);
         ctx.translate(-cameraX, -cameraY);
 
-        // --- The entire world drawing logic from the original draw() function goes here ---
+        // --- MODIFIED: 2D water surface logic removed. Wavelets are now drawn in the WebGL Pass 1.1 ---
         let tStart = performance.now();
-
-        if (effectManager) {
-            effectManager.drawWaterSurface(ctx, effectiveScale, windDirection, activeIslands);
-        }
 
         if (DEBUG.ENABLED && DEBUG.DRAW_ANCHOR_ZONES) {
             let tIslandsStart = performance.now();
@@ -1419,27 +1738,40 @@ const PlunderGame = (function() {
             const labelsToDraw = [];
             worldManager.getActiveObjects().statics.forEach(obstacle => {
                 if (!obstacle.debugAnchorZonePath) {
-                    const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
-                    const points = geometrySource.outerPerimeterPoints;
-                    if (points && obstacle.proximityRadius > 0) {
+                    // --- NEW: Prefer pre-calculated contour polygon if available ---
+                    if (obstacle.anchorZonePolygon && obstacle.anchorZonePolygon.length > 0) {
                         obstacle.debugAnchorZonePath = new Path2D();
-                        const cx = obstacle.x; const cy = obstacle.y; const r = obstacle.proximityRadius;
-                        let minY = Infinity;
-                        points.forEach((p, i) => {
-                            const dx = p.x - cx; const dy = p.y - cy;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
-                            if (dist > 0.001) {
-                                const scale = (dist + r) / dist;
-                                const ex = cx + dx * scale; const ey = cy + dy * scale;
-                                if (ey < minY) minY = ey;
-                                if (i === 0) obstacle.debugAnchorZonePath.moveTo(ex, ey);
-                                else obstacle.debugAnchorZonePath.lineTo(ex, ey);
-                            }
+                        obstacle.anchorZonePolygon.forEach((p, i) => {
+                            if (i === 0) obstacle.debugAnchorZonePath.moveTo(p.x, p.y);
+                            else obstacle.debugAnchorZonePath.lineTo(p.x, p.y);
                         });
                         obstacle.debugAnchorZonePath.closePath();
+                        // Find top-most point for label
+                        let minY = Infinity;
+                        obstacle.anchorZonePolygon.forEach(p => { if (p.y < minY) minY = p.y; });
                         obstacle.debugAnchorLabelY = minY;
                     } else {
-                        obstacle.debugAnchorZonePath = new Path2D(); 
+                        // Fallback to radial expansion for older objects/rocks
+                        const geometrySource = (obstacle.type === 'coralReef' && obstacle.rockBase) ? obstacle.rockBase : obstacle;
+                        const points = geometrySource.outerPerimeterPoints;
+                        if (points && obstacle.proximityRadius > 0) {
+                            obstacle.debugAnchorZonePath = new Path2D();
+                            const cx = obstacle.x; const cy = obstacle.y; const r = obstacle.proximityRadius;
+                            let minY = Infinity;
+                            points.forEach((p, i) => {
+                                const dx = p.x - cx; const dy = p.y - cy;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if (dist > 0.001) {
+                                    const scale = (dist + r) / dist;
+                                    const ex = cx + dx * scale; const ey = cy + dy * scale;
+                                    if (ey < minY) minY = ey;
+                                    if (i === 0) obstacle.debugAnchorZonePath.moveTo(ex, ey);
+                                    else obstacle.debugAnchorZonePath.lineTo(ex, ey);
+                                }
+                            });
+                            obstacle.debugAnchorZonePath.closePath();
+                            obstacle.debugAnchorLabelY = minY;
+                        }
                     }
                 }
                 if (obstacle.debugAnchorZonePath) {
@@ -1455,8 +1787,11 @@ const PlunderGame = (function() {
             if (ENABLE_PERFORMANCE_LOGGING) perfMetrics['Draw: Islands'] = (perfMetrics['Draw: Islands'] || 0) + (performance.now() - tIslandsStart);
         }
 
-        activeShoals.forEach(shoal => shoal.drawWorldSpace(ctx, effectiveScale, windDirection));
-        activeCoralReefs.forEach(reef => reef.drawWorldSpace(ctx, effectiveScale, windDirection));
+        // --- OPTIMIZATION: Skip 2D Static Drawing if WebGL is active ---
+        if (!webglShorelineRenderer) {
+            activeShoals.forEach(shoal => shoal.drawWorldSpace(ctx, effectiveScale, windDirection));
+            activeCoralReefs.forEach(reef => reef.drawWorldSpace(ctx, effectiveScale, windDirection));
+        }
 
         const viewBuffer = 200;
         const viewBounds = { minX: cameraX - viewBuffer, maxX: cameraX + effectiveCanvasWidth + viewBuffer, minY: cameraY - viewBuffer, maxY: cameraY + effectiveCanvasHeight + viewBuffer };
@@ -1471,7 +1806,6 @@ const PlunderGame = (function() {
         });
         if (ENABLE_PERFORMANCE_LOGGING) perfMetrics['Draw: Ships'] = (perfMetrics['Draw: Ships'] || 0) + (performance.now() - tShipsStart);
 
-        drawGrid(cameraX, cameraY, effectiveCanvasWidth, effectiveCanvasHeight);
         drawNpcPaths(ctx, effectiveScale, activeNpcs);
 
         if (player && player.isAnchored && player.anchorPoint) {
@@ -1479,19 +1813,38 @@ const PlunderGame = (function() {
         }
 
         let tIslandsStart2 = performance.now();
-        ctx.save();
-        worldManager.getActiveObjects().statics.forEach(obstacle => {
-            if (!obstacle.shoreGlowCache) _createShoreGlowCacheForObstacle(obstacle);
-            if (obstacle.shoreGlowCache) ctx.drawImage(obstacle.shoreGlowCache, obstacle.shoreGlowOffset.x, obstacle.shoreGlowOffset.y);
-        });
-        ctx.restore();
-
         const viewport = { x: cameraX, y: cameraY, width: effectiveCanvasWidth, height: effectiveCanvasHeight };
-        activeIslands.forEach(island => island.drawWorldSpace(ctx, effectiveScale, windDirection, shorelineRenderer, performance.now(), viewport));
-        activeRocks.forEach(rock => rock.drawWorldSpace(ctx, effectiveScale, windDirection, shorelineRenderer, performance.now(), viewport));
+        
+        if (!webglShorelineRenderer) {
+            activeIslands.forEach(island => island.drawWorldSpace(ctx, effectiveScale, windDirection, viewport));
+            activeRocks.forEach(rock => rock.drawWorldSpace(ctx, effectiveScale, windDirection, viewport));
+        }
 
         if (DEBUG.ENABLED && DEBUG.DRAW_CONVEX_HULLS && worldManager) {
-            // ... (convex hull drawing logic) ...
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)'; // Red
+            ctx.lineWidth = 2 / effectiveScale;
+            ctx.setLineDash([10 / effectiveScale, 5 / effectiveScale]); // Dashed line
+
+            const allActiveStatics = [
+                ...activeIslands,
+                ...activeRocks,
+                ...activeShoals,
+                ...activeCoralReefs
+            ];
+
+            allActiveStatics.forEach(obstacle => {
+                if (obstacle.convexHull && obstacle.convexHull.length > 0) {
+                    ctx.beginPath();
+                    obstacle.convexHull.forEach((p, i) => {
+                        if (i === 0) ctx.moveTo(p.x, p.y);
+                        else ctx.lineTo(p.x, p.y);
+                    });
+                    ctx.closePath();
+                    ctx.stroke();
+                }
+            });
+            ctx.restore();
         }
         if (ENABLE_PERFORMANCE_LOGGING) perfMetrics['Draw: Islands'] = (perfMetrics['Draw: Islands'] || 0) + (performance.now() - tIslandsStart2);
 
@@ -1566,15 +1919,74 @@ const PlunderGame = (function() {
     function draw() {
         let tStart = performance.now();
 
-        // Fill the background with the ocean color first.
         if (!ctx) return;
 
-        // This replaces the need for ctx.clearRect().
-        ctx.fillStyle = OCEAN_BLUE;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // --- NEW: Clear the 2D canvas ---
+        // Since we no longer fill the background with OCEAN_BLUE, we must clear the
+        // transparent 2D layer every frame to prevent moving objects from leaving streaks.
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // --- NEW: Calculate Effective Scale ---
         const effectiveScale = worldToScreenScale * currentZoomMultiplier;
+
+        // --- FIX: Synchronize Active Camera ---
+        // Determine which camera position the WebGL renderer should focus on.
+        // This prevents the background from lagging behind the player when moving quickly.
+        let activeCamX = cameraX;
+        let activeCamY = cameraY;
+        
+        if (player) {
+            const viewW = canvas.width / effectiveScale;
+            const viewH = canvas.height / effectiveScale;
+            if (isSpyglassActive) {
+                activeCamX = (player.x + spyglassOffsetX) - (viewW / 2);
+                activeCamY = (player.y + spyglassOffsetY) - (viewH / 2);
+            } else {
+                activeCamX = player.x - (viewW / 2);
+                activeCamY = player.y - (viewH / 2);
+            }
+        }
+
+        // --- NEW: Clear the WebGL canvas first ---
+        if (window.webglManager && window.webglManager.getGL()) { // Check if WebGL context is actually available
+            window.webglManager.clear();
+            if (webglShorelineRenderer) {
+                const gl = window.webglManager.getGL();
+                const time = performance.now();
+                const statics = {
+                    islands: activeIslands,
+                    rocks: activeRocks,
+                    shoals: activeShoals,
+                    coralReefs: activeCoralReefs
+                };
+                const wavelets = effectManager ? effectManager.wavelets : [];
+
+                // --- FIX: Dual-Viewport WebGL Rendering ---
+                if ((isSpyglassActive || spyglassProgress > 0) && player) {
+                    gl.enable(gl.SCISSOR_TEST);
+                    
+                    // Pass 1: Player View (Bottom 25%)
+                    // WebGL scissor coordinates start from bottom-left
+                    const splitY = Math.floor(canvas.height * 0.25);
+                    gl.scissor(0, 0, canvas.width, splitY);
+                    
+                    const playerViewH = canvas.height / effectiveScale;
+                    const playerCamX = player.x - (canvas.width / effectiveScale) / 2;
+                    const playerCamY = player.y - (playerViewH * 0.85); // Matches _drawPlayerViewport math
+                    
+                    webglShorelineRenderer.render(time, playerCamX, playerCamY, effectiveScale, statics, webglGridRenderer, webglOceanWavesRenderer, wavelets, webglIslandRenderer, webglRockRenderer, webglShoalRenderer, webglCoralReefRenderer, window.windDirection);
+
+                    // Pass 2: Spyglass View (Top 75%)
+                    gl.scissor(0, splitY, canvas.width, canvas.height - splitY);
+                    webglShorelineRenderer.render(time, activeCamX, activeCamY, effectiveScale, statics, webglGridRenderer, webglOceanWavesRenderer, wavelets, webglIslandRenderer, webglRockRenderer, webglShoalRenderer, webglCoralReefRenderer, window.windDirection);
+
+                    gl.disable(gl.SCISSOR_TEST);
+                } else {
+                    // Single pass for normal gameplay or background menu
+                    webglShorelineRenderer.render(time, activeCamX, activeCamY, effectiveScale, statics, webglGridRenderer, webglOceanWavesRenderer, wavelets, webglIslandRenderer, webglRockRenderer, webglShoalRenderer, webglCoralReefRenderer, window.windDirection);
+                }
+            }
+        }
 
         // --- FIX: Check progress so we render during closing animation ---
         if ((isSpyglassActive || spyglassProgress > 0) && player) {
@@ -1607,6 +2019,13 @@ const PlunderGame = (function() {
             ctx.rect(0, 0, canvas.width, canvas.height * 0.75);
             ctx.clip();
             _drawWorldContent(spyglassCamX, spyglassCamY, effectiveScale);
+
+            // --- NEW: Draw Visual Divider Line ---
+            ctx.restore();
+            ctx.save();
+            ctx.strokeStyle = '#3d352a'; // Ink Color
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(0, canvas.height * 0.75); ctx.lineTo(canvas.width, canvas.height * 0.75); ctx.stroke();
             ctx.restore();
     
         } else {
@@ -1622,14 +2041,17 @@ const PlunderGame = (function() {
         }
 
         // --- NEW: World Buffer Warning Overlay ---
-        if (player && !gameOverState.active && player.bufferPenetration > 0) {
+        // MODIFIED: Allow the darkening to persist during Game Over to prevent
+        // a "brightness snap" when lost at sea.
+        if (player && player.bufferPenetration > 0) {
             const penetration = player.bufferPenetration;
             if (penetration > 0) {
                 const maxPenetration = WORLD_BUFFER / 2;
                 const opacity = Math.min(1, penetration / maxPenetration);
                 ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
-                if (opacity > 0.2) {
+                // Only show the text warning if the game is still active
+                if (opacity > 0.2 && !gameOverState.active) {
                     ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
                     ctx.font = "30px 'IM Fell English', serif";
                     ctx.textAlign = "center";
@@ -1693,7 +2115,11 @@ const PlunderGame = (function() {
             // Apply to canvas element
             const filterString = `blur(${blurPx.toFixed(2)}px) grayscale(${grayPct.toFixed(1)}%) brightness(${brightPct.toFixed(1)}%)`;
             if (filterString !== gameOverState.lastFilterString) {
+                // --- FIX: Apply filter to both the 2D Ship Layer and the WebGL Ocean Layer ---
                 canvas.style.filter = filterString;
+                if (window.webglManager && window.webglManager.canvas) {
+                    window.webglManager.canvas.style.filter = filterString;
+                }
                 gameOverState.lastFilterString = filterString;
             }
 
@@ -1719,7 +2145,13 @@ const PlunderGame = (function() {
             }
         } else {
             // Ensure filter is clear during normal gameplay
-            if (canvas.style.filter !== 'none') canvas.style.filter = 'none';
+            if (canvas.style.filter !== 'none') {
+                canvas.style.filter = 'none';
+                // Sync clear to WebGL
+                if (window.webglManager && window.webglManager.canvas) {
+                    window.webglManager.canvas.style.filter = 'none';
+                }
+            }
         }
 
         let tUI = performance.now();
@@ -2216,6 +2648,20 @@ const PlunderGame = (function() {
             // If 'Sunk', we let the sinking animation play out, so we continue.
         }
 
+        // --- NEW: Dynamic World Activation ---
+        // Adjust the active sector radius based on the current view size.
+        // This ensures visible chunks are loaded regardless of zoom level.
+        if (worldManager) {
+            const viewDim = Math.max(canvas.width, canvas.height) / (worldToScreenScale * currentZoomMultiplier);
+            const viewRadius = viewDim / 2;
+            // --- FIX: Reduced Buffer ---
+            // Since WorldManager now handles multi-sector objects, we only need a small pop-in buffer.
+            const safeRadius = viewRadius + 1000;
+            // --- OPTIMIZATION: Prevent Jitter ---
+            const nextRadius = Math.ceil(safeRadius / worldManager.sectorSize);
+            if (nextRadius !== worldManager.activationRadius) worldManager.activationRadius = nextRadius;
+        }
+
         // --- NEW: Update the WorldManager first ---
         if (player && worldManager) {
             worldManager.update(player, deltaTime, windDirection, pathfinder);
@@ -2320,6 +2766,17 @@ const PlunderGame = (function() {
             environmentManager.update(deltaTime, () => {
                 allShips.forEach(ship => processDailyConsumption(ship));
             });
+
+            // --- NEW: Handle NPC Auto-Lights ---
+            // Automatically turn on NPC lights when it starts getting dark (80% light or less).
+            const shouldHaveLightsOn = environmentManager.ambientLightLevel <= 0.8;
+            for (let i = 0; i < allShips.length; i++) {
+                const s = allShips[i];
+                if (s === player) continue; // Respect the player's manual toggle choice
+                
+                // NPCs turn on lights at dusk, unless they have surrendered (doused lanterns).
+                s.lightsOn = (s.aiState !== 'surrendered') ? shouldHaveLightsOn : false;
+            }
         }
 
         // --- NEW: Update Zoom Level ---
@@ -2451,7 +2908,11 @@ const PlunderGame = (function() {
             gameOverOverlay.style.opacity = '0';
         }
 
-        canvas.style.willChange = 'filter'; // --- NEW: Optimize filter performance ---
+        // --- FIX: Optimize filter performance for both canvases ---
+        canvas.style.willChange = 'filter';
+        if (window.webglManager && window.webglManager.canvas) {
+            window.webglManager.canvas.style.willChange = 'filter';
+        }
 
         // Disable game input immediately
         isGameActive = false;
@@ -2460,6 +2921,12 @@ const PlunderGame = (function() {
         // Close any open UI
         closeInventory();
         isMapExpanded = false; // --- FIX: Ensure map is closed on Game Over ---
+
+        // --- FIX: Reset Spyglass on Game Over ---
+        // This ensures the screen returns to a single unified viewport for the
+        // game-over sequence, preventing effects from appearing localized.
+        isSpyglassActive = false;
+        spyglassProgress = 0;
     }
 
     /**
@@ -2558,6 +3025,8 @@ const PlunderGame = (function() {
         closeInventory, // Expose for main.js
         createCannonEffect, // --- NEW: Expose for ships to call ---
         handleShipSeizure, // Expose for FleetUI
+        get shorelineRenderer() { return webglShorelineRenderer; }, // Expose for UI toggling
+        get gridRenderer() { return webglGridRenderer; }, // Expose for UI toggling
         swapFlagship, // Expose for Inventory UI
         get fleetManager() { return fleetManager; }, // Expose for WorldManager reconnection
         setPerformanceLogging: (enabled) => { ENABLE_PERFORMANCE_LOGGING = enabled; console.log(`Performance logging set to: ${enabled}`); }

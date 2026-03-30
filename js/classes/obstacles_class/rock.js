@@ -10,13 +10,4 @@ class Rock extends Obstacle {
         super(irregularPoints, ROCK_COLOR, baseRadiusX, baseRadiusY, 'rock');
         this.cacheVisuals();
     }
-
-    drawWorldSpace(ctx, worldToScreenScale, windDirection, shorelineRenderer = null, time = 0, viewport = null) {
-        super.drawWorldSpace(ctx, worldToScreenScale, windDirection);
-
-        // Draw simplified wave break for rocks
-        if (shorelineRenderer) {
-            shorelineRenderer.renderIsland(ctx, this, time, viewport, worldToScreenScale);
-        }
-    }
 }

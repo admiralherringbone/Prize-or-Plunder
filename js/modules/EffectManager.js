@@ -154,16 +154,18 @@ class EffectManager {
         this.cannonEffects.push(smoke);
     }
 
-    createWavelet(x, y) {
+    createWavelet(x, y, windDirection) {
         let w = this.waveletPool.length > 0 ? this.waveletPool.pop() : {};
         const r = Math.random();
-        w.x = x; w.y = y; w.life = 0;
+        w.x = x; w.y = y; w.life = 0; 
+        // --- NEW: Store Wind Direction at Birth ---
+        w.windDirection = windDirection;
         if (r < 0.70) {
-            w.type = 'texture'; w.width = 5 + Math.random() * 10; w.maxLife = 1000 + Math.random() * 1000; w.speed = 0; w.amplitude = w.width * 0.8; w.maxOpacity = 0.2 + Math.random() * 0.2;
+            w.type = 'texture'; w.width = 5 + Math.random() * 10; w.maxLife = 400 + Math.random() * 600; w.speed = 0; w.amplitude = w.width * 0.8; w.maxOpacity = 0.3 + Math.random() * 0.2;
         } else if (r < 0.95) {
-            w.type = 'chop'; w.width = 30 + Math.random() * 50; w.maxLife = 2000 + Math.random() * 2000; w.speed = 10 + Math.random() * 10; w.amplitude = w.width * 0.6; w.maxOpacity = 0.3 + Math.random() * 0.3;
+            w.type = 'chop'; w.width = 30 + Math.random() * 50; w.maxLife = 800 + Math.random() * 1000; w.speed = 10 + Math.random() * 10; w.amplitude = w.width * 0.6; w.maxOpacity = 0.3 + Math.random() * 0.3;
         } else {
-            w.type = 'swell'; w.width = 150 + Math.random() * 150; w.maxLife = 5000 + Math.random() * 5000; w.speed = 5 + Math.random() * 5; w.amplitude = w.width * 0.4; w.maxOpacity = 0.1 + Math.random() * 0.1;
+            w.type = 'swell'; w.width = 150 + Math.random() * 150; w.maxLife = 1500 + Math.random() * 2000; w.speed = 5 + Math.random() * 5; w.amplitude = w.width * 0.15; w.maxOpacity = 0.2 + Math.random() * 0.1;
         }
         w.angleOffset = (Math.random() - 0.5) * 0.3;
         w.skew = (Math.random() - 0.5) * (w.width * 0.25);
@@ -216,40 +218,49 @@ class EffectManager {
         if (this.wavelets && effectiveScale && windDirection !== undefined) { // Failsafe for initialization
             const viewWidth = canvasWidth / effectiveScale;
             const viewHeight = canvasHeight / effectiveScale;
-            const targetCount = 150; // Max wavelets
+            const targetCount = 1200; // Doubled count for a denser ocean surface
 
             // Spawn new wavelets if needed
             if (this.wavelets.length < targetCount) {
-                const clusterSize = Math.floor(Math.random() * 3) + 1;
-                let cx, cy;
+                // To achieve a more equal distribution, we spawn individual wavelets 
+                // at unique random positions instead of using tight clusters.
+                const spawnBurst = 15; // Number of independent spawn attempts per frame
                 const buffer = 300;
 
-                if (Math.random() < 0.5) {
-                    const upwindAngle = windDirection + Math.PI;
-                    const dist = Math.max(viewWidth, viewHeight) / 2 + buffer;
-                    cx = cameraX + viewWidth / 2 + Math.cos(upwindAngle) * dist;
-                    cy = cameraY + viewHeight / 2 + Math.sin(upwindAngle) * dist;
-                    const perpAngle = upwindAngle + Math.PI / 2;
-                    const spread = (Math.random() - 0.5) * Math.max(viewWidth, viewHeight) * 1.5;
-                    cx += Math.cos(perpAngle) * spread;
-                    cy += Math.sin(perpAngle) * spread;
-                } else {
-                    cx = cameraX - buffer + Math.random() * (viewWidth + 2 * buffer);
-                    cy = cameraY - buffer + Math.random() * (viewHeight + 2 * buffer);
-                }
-                for (let i = 0; i < clusterSize; i++) {
-                    const ox = (Math.random() - 0.5) * 100;
-                    const oy = (Math.random() - 0.5) * 100;
-                    this.wavelets.push(this.createWavelet(cx + ox, cy + oy));
+                for (let i = 0; i < spawnBurst; i++) {
+                    if (this.wavelets.length >= targetCount) break;
+
+                    let rx, ry;
+                    // Mix between spawning on the "upwind horizon" (to fill new space as we move)
+                    // and spawning randomly across the entire visible viewport.
+                    if (Math.random() < 0.4) {
+                        const upwindAngle = windDirection + Math.PI;
+                        const dist = Math.max(viewWidth, viewHeight) / 2 + buffer;
+                        const cx = cameraX + viewWidth / 2 + Math.cos(upwindAngle) * dist;
+                        const cy = cameraY + viewHeight / 2 + Math.sin(upwindAngle) * dist;
+                        const perpAngle = upwindAngle + Math.PI / 2;
+                        const spread = (Math.random() - 0.5) * Math.max(viewWidth, viewHeight) * 2.0;
+                        rx = cx + Math.cos(perpAngle) * spread;
+                        ry = cy + Math.sin(perpAngle) * spread;
+                    } else {
+                        rx = cameraX - buffer + Math.random() * (viewWidth + 2 * buffer);
+                        ry = cameraY - buffer + Math.random() * (viewHeight + 2 * buffer);
+                    }
+                    this.wavelets.push(this.createWavelet(rx, ry, windDirection));
                 }
             }
 
             for (let i = this.wavelets.length - 1; i >= 0; i--) {
                 const w = this.wavelets[i];
                 w.life += deltaTime;
+
+                // Store raw progress for the shader to handle the curve
+                w.progress = Math.min(1.0, w.life / w.maxLife);
+
                 if (w.speed > 0) {
-                    w.x += Math.cos(windDirection) * w.speed * (deltaTime / 1000);
-                    w.y += Math.sin(windDirection) * w.speed * (deltaTime / 1000);
+                    // --- FIX: Drift using Birth Wind ---
+                    w.x += Math.cos(w.windDirection) * w.speed * (deltaTime / 1000);
+                    w.y += Math.sin(w.windDirection) * w.speed * (deltaTime / 1000);
                 }
                 const buffer = 300;
                 if (w.life >= w.maxLife || w.x < cameraX - buffer || w.x > cameraX + viewWidth + buffer || w.y < cameraY - buffer || w.y > cameraY + viewHeight + buffer) {
@@ -378,16 +389,13 @@ class EffectManager {
         ctx.lineCap = 'round';
         const time = performance.now() / 1000;
         for (const w of this.wavelets) {
-            const progress = w.life / w.maxLife;
-            let alpha = w.maxOpacity;
-            let sizeScale = 1.0;
-            if (progress < 0.2) {
-                alpha *= (progress / 0.2);
-                sizeScale = 0.5 + (0.5 * (progress / 0.2));
-            } else if (progress > 0.8) {
-                alpha *= ((1 - progress) / 0.2);
-                sizeScale = 1.0 - (0.2 * ((progress - 0.8) / 0.2));
-            }
+            // --- FIX: Sync 2D Fallback with WebGL pulse ---
+            const progress = w.progress;
+            const pulse = Math.sin(progress * Math.PI);
+            
+            const alpha = w.maxOpacity * pulse;
+            const sizeScale = pulse;
+
             const swellProgress = Math.sin(progress * Math.PI);
             const currentAmplitude = w.amplitude * (0.3 + 0.7 * swellProgress);
             ctx.globalAlpha = alpha;
@@ -395,7 +403,8 @@ class EffectManager {
 
             // --- NEW: Shore Break Effect (Adapted from old game.js) ---
             let finalAngle;
-            const windAngle = (windDirection - Math.PI / 2) + w.angleOffset;
+            // --- FIX: Orientation using Birth Wind ---
+            const windAngle = (w.windDirection - Math.PI / 2) + w.angleOffset;
             let closestIsland = null;
             let closestDist = Infinity;
             let closestShorePoint = null;
@@ -431,7 +440,8 @@ class EffectManager {
             ctx.rotate(finalAngle);
             ctx.scale(sizeScale, 1.0);
             ctx.beginPath();
-            const rawNumPoints = Math.max(6, Math.ceil(w.width / 4));
+            // --- OPTIMIZATION: Reduce point density (from /4 to /10) ---
+            const rawNumPoints = Math.max(4, Math.ceil(w.width / 10));
             const numPoints = Math.min(rawNumPoints, this.WAVELET_MAX_POINTS - 1);
             const p0x = -w.width / 2, p0y = 0;
             const p1x = w.skew, p1y = -currentAmplitude;

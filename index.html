@@ -10,6 +10,22 @@
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/start-screen.css">
     <link rel="stylesheet" href="css/loading-screen.css"> <!-- New: Loading Screen Styles -->
+    <style>
+        /* Hybrid Rendering Stack: WebGL sits behind the 2D Canvas */
+        #webglCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            background: transparent; /* Allow WebGL to show through */
+        }
+    </style>
 </head>
 <body>
     <div id="start-screen" style="display: none;">
@@ -370,6 +386,7 @@
     <!-- New: Tooltip element for the shipyard -->
     <div id="shipyard-tooltip"></div>
 
+    <canvas id="webglCanvas"></canvas>
     <canvas id="gameCanvas"></canvas>
 
     <!-- New: Loading Screen -->
@@ -383,6 +400,7 @@
         <div class="loading-bar-container">
             <div id="loading-bar-fill"></div>
         </div>
+        <div id="loading-status-text" style="margin-top: 15px; font-family: 'IM Fell English', serif; font-size: 18px; color: #5C543D; font-style: italic; opacity: 0.8;">Initializing...</div>
     </div>
 
     <!-- New: Color Picker HTML is now outside the main flow, ready to be moved by JS -->
@@ -401,6 +419,7 @@
 
     <!-- Load your game scripts in order of dependency -->
     <script src="js/modules/utils.js"></script>       <!-- Utility functions, no dependencies -->
+    <script src="js/modules/IslandShapeGenerator.js"></script> <!-- New: Complex Island Generator -->
     <script src="js/InputManager.js"></script> 
     <script src="js/modules/CanvasManager.js"></script> <!-- New: Canvas pooling system -->
     <script src="js/modules/LoadingScreenManager.js"></script> <!-- New: Loading Screen Manager -->
@@ -457,7 +476,25 @@
     <script src="js/classes/ship_class/AlliedCombatPilot.js"></script> <!-- Allied Combat AI -->
     <script src="js/classes/ship_class/AlliedShip.js"></script> <!-- Allied Ship Class -->
     <script src="js/ui/FleetUI.js"></script> <!-- Fleet UI -->
-    <script src="js/classes/ShorelineRenderer.js"></script> <!-- Shoreline Renderer -->
+
+    <!-- Load WebGL Pipeline -->
+    <script src="js/rendering/WebGLManager.js"></script>
+    <script src="js/rendering/BufferManager.js"></script>
+    <script src="js/rendering/shaders/ShorelineShader.js"></script>
+    <script src="js/rendering/shaders/GridShader.js"></script>
+    <script src="js/rendering/shaders/OceanWavesShader.js"></script>
+    <script src="js/rendering/shaders/IslandShader.js"></script>
+    <script src="js/rendering/shaders/RockShader.js"></script>
+    <script src="js/rendering/shaders/ShoalShader.js"></script>
+    <script src="js/rendering/shaders/CoralReefShader.js"></script>
+    <script src="js/rendering/ShorelineGLRenderer.js"></script>
+    <script src="js/rendering/GridGLRenderer.js"></script>
+    <script src="js/rendering/OceanWavesGLRenderer.js"></script>
+    <script src="js/rendering/IslandGLRenderer.js"></script>
+    <script src="js/rendering/RockGLRenderer.js"></script>
+    <script src="js/rendering/ShoalGLRenderer.js"></script>
+    <script src="js/rendering/CoralReefGLRenderer.js"></script>
+
     <script src="js/game.js"></script>        <!-- Game object must be defined before main.js uses it -->
     <script src="js/main.js"></script>        <!-- Main logic runs last -->
 </body>

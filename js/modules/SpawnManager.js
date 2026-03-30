@@ -112,15 +112,37 @@ class SpawnManager {
 
     /**
      * Spawns the initial set of NPC ships in the world.
+     * @param {function} [progressCallback] - Optional callback to update loading screen.
      */
-    spawnInitialNpcs() {
+    async spawnInitialNpcs(progressCallback) { // --- FIX: Async ---
         const worldAreaFactor = (WORLD_WIDTH * WORLD_HEIGHT) / (10000 * 10000);
         const numNavyShips = Math.round(NAVY_SHIP_DENSITY * worldAreaFactor);
         const numMerchantShips = Math.round(MERCHANT_SHIP_DENSITY * worldAreaFactor);
+        const totalShips = numNavyShips + numMerchantShips;
+        let spawnedCount = 0;
+        console.log(`Spawning ${totalShips} NPCs (${numNavyShips} Navy, ${numMerchantShips} Merchant)...`);
 
-        // Spawn the specified number of each ship type.
-        for (let i = 0; i < numNavyShips; i++) { this._spawnSingleNpc(NavyShip); }
-        for (let i = 0; i < numMerchantShips; i++) { this._spawnSingleNpc(MerchantShip); }
+        try {
+            // Spawn the specified number of each ship type.
+            for (let i = 0; i < numNavyShips; i++) { 
+                if (i % 5 === 0) await new Promise(r => setTimeout(r, 0)); // Yield every 5 ships
+                this._spawnSingleNpc(NavyShip); 
+                spawnedCount++;
+                if (progressCallback) progressCallback(70 + (spawnedCount / totalShips) * 20, "Spawning Navy Ships..."); // 70% -> 90%
+            }
+            console.log("Navy Ships Spawned.");
+            
+            for (let i = 0; i < numMerchantShips; i++) { 
+                if (i % 5 === 0) await new Promise(r => setTimeout(r, 0)); // Yield every 5 ships
+                this._spawnSingleNpc(MerchantShip); 
+                spawnedCount++;
+                if (progressCallback) progressCallback(70 + (spawnedCount / totalShips) * 20, "Spawning Merchant Ships..."); // 70% -> 90%
+            }
+            console.log("Merchant Ships Spawned.");
+        } catch (err) {
+            console.error("CRITICAL: Error during NPC spawning:", err);
+            throw err; // Re-throw so main.js catches it
+        }
     }
 
     /**
